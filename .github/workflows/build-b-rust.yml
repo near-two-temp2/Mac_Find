@@ -1,0 +1,84 @@
+name: build-b-rust
+
+# Road_B (Rust)：自建 mmap 二进制索引 + 并行 bitmask 预过滤 + fzf 评分的 egui GUI。
+# 仅在本实现目录变更时触发；权威构建在 macos-latest runner。
+on:
+  push:
+    paths:
+      - "Road_B/Src_RUST/**"
+      - ".github/workflows/build-b-rust.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: Road_B/Src_RUST
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (rustup)
+        run: |
+          if ! command -v rustup >/dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+          rustup update stable
+          rustup default stable
+          rustc --version
+          cargo --version
+
+      - name: Cargo build (release)
+        run: cargo build --release --locked || cargo build --release
+
+      - name: Cargo test
+        run: cargo test --release || cargo test
+
+      - name: CI smoke test (index + search CLI)
+        run: |
+          set -euo pipefail
+          IDX="$RUNNER_TEMP/haifind-ci.idx"
+          # 用仓库自身目录做小规模索引，避免全盘遍历。
+          ./target/release/haifind-index "$GITHUB_WORKSPACE" --out "$IDX" --max 20000
+          echo "--- 搜索 'Cargo' ---"
+          ./target/release/haifind-search Cargo --index "$IDX" --limit 20
+          echo "--- 搜索 'main.rs'（仅文件） ---"
+          ./target/release/haifind-search main.rs --index "$IDX" --files --limit 20
+
+      - name: Package app bundle
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/dist/MacHaiFind-B-Rust.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp target/release/haifind-gui   "$APP/Contents/MacOS/MacHaiFind-B-Rust"
+          cp target/release/haifind-index "$APP/Contents/MacOS/haifind-index"
+          cp target/release/haifind-search "$APP/Contents/MacOS/haifind-search"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>MacHaiFind-B-Rust</string>
+            <key>CFBundleDisplayName</key><string>Mac Hai Find — Road_B (Rust)</string>
+            <key>CFBundleIdentifier</key><string>com.haifind.b-rust</string>
+            <key>CFBundleVersion</key><string>0.1.0</string>
+            <key>CFBundleShortVersionString</key><string>0.1.0</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleExecutable</key><string>MacHaiFind-B-Rust</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          echo "打包完成：$APP"
+          ls -R "$RUNNER_TEMP/dist"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-b-rust-app
+          path: ${{ runner.temp }}/dist/
+          if-no-files-found: error

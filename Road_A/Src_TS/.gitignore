@@ -1,0 +1,8 @@
+node_modules/
+dist/
+release/
+build/
+renderer/renderer.js
+*.node
+.DS_Store
+npm-debug.log*

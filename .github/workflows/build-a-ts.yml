@@ -1,0 +1,70 @@
+name: build-a-ts
+
+# Road_A · TypeScript (Electron + node-gyp searchfs addon)
+# Builds the native addon, compiles TS, packages the Electron app,
+# and uploads the .app / .dmg as an artifact. macOS runner is mandatory
+# because the addon links against searchfs(2) / fsgetpath().
+
+on:
+  push:
+    paths:
+      - "Road_A/Src_TS/**"
+      - ".github/workflows/build-a-ts.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_A/Src_TS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Show toolchain
+        run: |
+          node --version
+          npm --version
+          python3 --version
+          xcodebuild -version || true
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile native addon
+        run: npm run build:addon
+
+      - name: Compile TypeScript (main + renderer)
+        run: |
+          npm run build:main
+          npm run build:renderer
+
+      - name: CLI smoke test (engine load probe)
+        run: node dist/cli.js --check
+
+      - name: Package Electron app (.app + .dmg)
+        run: npm run pack
+
+      - name: List build output
+        run: |
+          echo "--- release/ ---"
+          ls -la release || true
+          echo "--- .app bundles ---"
+          find release -maxdepth 3 -name "*.app" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-a-ts-app
+          path: |
+            Road_A/Src_TS/release/*.dmg
+            Road_A/Src_TS/release/mac*/**
+          if-no-files-found: warn
+          retention-days: 14

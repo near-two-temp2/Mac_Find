@@ -1,0 +1,45 @@
+[package]
+name = "mac-hai-find-b-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Road_B (Rust): macOS 极速文件搜索 — 自建 mmap 二进制索引 + 并行 bitmask 预过滤 + fzf 模糊评分"
+license = "MIT"
+publish = false
+
+# ── 库：索引 + 搜索引擎（GUI/CLI 共用） ─────────────────────────
+[lib]
+name = "haifind"
+path = "src/lib.rs"
+
+# ── GUI：egui/eframe 桌面 app（搜索框 + 结果列表） ───────────────
+[[bin]]
+name = "haifind-gui"
+path = "src/bin/gui.rs"
+
+# ── CLI：index 子命令（建索引），供 CI 冒烟测试 ──────────────────
+[[bin]]
+name = "haifind-index"
+path = "src/bin/index.rs"
+
+# ── CLI：search 子命令（查索引），供 CI 冒烟测试 ─────────────────
+[[bin]]
+name = "haifind-search"
+path = "src/bin/search.rs"
+
+[dependencies]
+memmap2 = "0.9"          # mmap 加载二进制索引
+rayon = "1.10"           # Phase1 并行 bitmask 预过滤
+walkdir = "2.5"          # 遍历文件系统建索引
+dirs = "5.0"             # 定位 ~/Library/Caches 索引目录
+eframe = { version = "0.29", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "wayland",
+    "x11",
+] }
+egui = "0.29"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

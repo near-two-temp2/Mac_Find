@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mac-find-b"
+version = "0.1.0"
+description = "Road_B (Python): macOS fast file search — binary index + bitmask prefilter + fzf scoring, PyQt6 GUI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "PyQt6>=6.6",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+
+[project.scripts]
+mac-find-b = "mac_find_b.cli:main"
+
+[project.gui-scripts]
+mac-find-b-gui = "mac_find_b.gui:main"
+
+[tool.setuptools]
+packages = ["mac_find_b"]

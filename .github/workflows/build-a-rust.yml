@@ -1,0 +1,84 @@
+name: build-a-rust
+
+# Road_A (Rust): macOS instant filename search GUI backed by the searchfs() syscall.
+# Authoritative build runs on GitHub Actions macos-latest (dev host is macOS 12
+# and does not build locally). Only triggers on changes to this implementation.
+
+on:
+  push:
+    paths:
+      - "Road_A/Src_RUST/**"
+      - ".github/workflows/build-a-rust.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: Road_A/Src_RUST
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            Road_A/Src_RUST/target
+          key: ${{ runner.os }}-cargo-a-rust-${{ hashFiles('Road_A/Src_RUST/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-a-rust-
+
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: CLI smoke test (self-test)
+        run: |
+          ./target/release/mac-find-cli --help
+          # Engine must run end-to-end without panicking. Zero hits is still a
+          # pass: the CI runner may lack Full Disk Access.
+          ./target/release/mac-find-cli --self-test
+
+      - name: Assemble .app bundle
+        run: |
+          APP="MacFind-RoadA-Rust.app"
+          mkdir -p "dist/${APP}/Contents/MacOS"
+          mkdir -p "dist/${APP}/Contents/Resources"
+          cp target/release/mac-find-gui "dist/${APP}/Contents/MacOS/MacFind"
+          cp target/release/mac-find-cli "dist/${APP}/Contents/MacOS/mac-find-cli"
+          cat > "dist/${APP}/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>MacFind Road A (Rust)</string>
+            <key>CFBundleDisplayName</key><string>MacFind Road A</string>
+            <key>CFBundleIdentifier</key><string>org.macfind.roada.rust</string>
+            <key>CFBundleVersion</key><string>0.1.0</string>
+            <key>CFBundleShortVersionString</key><string>0.1.0</string>
+            <key>CFBundleExecutable</key><string>MacFind</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          echo "Bundle assembled:"
+          find "dist/${APP}" -type f
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-a-rust-app
+          path: |
+            Road_A/Src_RUST/dist/**
+            Road_A/Src_RUST/target/release/mac-find-gui
+            Road_A/Src_RUST/target/release/mac-find-cli
+          if-no-files-found: error

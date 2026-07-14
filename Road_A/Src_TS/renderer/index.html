@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"
+    />
+    <title>Mac_Find — Road A (searchfs)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="search-row">
+        <input
+          id="search"
+          class="search-input"
+          type="text"
+          placeholder="Search filenames (searchfs, no index)…"
+          autofocus
+          spellcheck="false"
+          autocomplete="off"
+        />
+        <span id="spinner" class="spinner hidden"></span>
+      </div>
+      <div class="options">
+        <label><input type="radio" name="kind" value="all" checked /> All</label>
+        <label><input type="radio" name="kind" value="files" /> Files only</label>
+        <label><input type="radio" name="kind" value="dirs" /> Dirs only</label>
+        <span class="sep"></span>
+        <label><input type="checkbox" id="caseSensitive" /> Case-sensitive</label>
+        <label><input type="checkbox" id="exact" /> Exact</label>
+        <label><input type="checkbox" id="skipInvisibles" /> Skip hidden</label>
+        <span class="sep"></span>
+        <label class="limit">
+          Limit
+          <input type="number" id="limit" value="500" min="1" max="100000" step="1" />
+        </label>
+      </div>
+    </header>
+
+    <div id="banner" class="banner hidden"></div>
+
+    <main class="results-wrap">
+      <ul id="results" class="results"></ul>
+      <div id="empty" class="empty">Type to search…</div>
+    </main>
+
+    <footer class="statusbar">
+      <span id="status">Ready</span>
+    </footer>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

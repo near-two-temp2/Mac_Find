@@ -1,0 +1,64 @@
+name: build-b-cpp
+
+# Road_B · C++ — Qt6 GUI (self-built binary index + fzf engine).
+# Authoritative build runs on GitHub's macOS runner; the dev machine (macOS 12)
+# does not build locally.
+
+on:
+  push:
+    paths:
+      - "Road_B/Src_CPP/**"
+      - ".github/workflows/build-b-cpp.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_B/Src_CPP
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt6 (Homebrew)
+        run: |
+          brew update
+          brew install qt || brew upgrade qt || true
+          brew --prefix qt
+
+      - name: Configure (CMake)
+        run: |
+          QT_PREFIX="$(brew --prefix qt)"
+          echo "Qt prefix: $QT_PREFIX"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_PREFIX"
+
+      - name: Build (CLI + GUI .app)
+        run: cmake --build build --config Release -j 3
+
+      - name: Smoke test (CLI selftest)
+        run: |
+          ./build/mff-b selftest
+          # Also index a small tree and run a fuzzy query end-to-end.
+          ./build/mff-b index --root "$PWD/src" --out /tmp/ci.idx
+          ./build/mff-b search --index /tmp/ci.idx engcpp
+
+      - name: Show produced bundle
+        run: |
+          echo "Build tree:"
+          ls -la build || true
+          echo "App bundle:"
+          ls -la build/MacFindRoadB.app || echo "GUI bundle not found"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-b-cpp-app
+          # Ship both the .app bundle and the CLI helper.
+          path: |
+            Road_B/Src_CPP/build/MacFindRoadB.app
+            Road_B/Src_CPP/build/mff-b
+          if-no-files-found: warn

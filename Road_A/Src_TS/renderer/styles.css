@@ -1,0 +1,202 @@
+/* Mac_Find Road A — renderer styles. Native-ish macOS look, dark-mode aware. */
+
+:root {
+  --bg: #f5f5f7;
+  --panel: #ffffff;
+  --border: #d9d9de;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --accent: #0a84ff;
+  --hover: #eef4ff;
+  --row-alt: #fafafa;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1e1e1e;
+    --panel: #262626;
+    --border: #3a3a3c;
+    --text: #f5f5f7;
+    --muted: #9a9a9e;
+    --accent: #0a84ff;
+    --hover: #2c3a52;
+    --row-alt: #232323;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  padding: 12px 14px 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-input {
+  flex: 1;
+  font-size: 15px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.options .sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+}
+
+.limit input {
+  width: 64px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.banner {
+  padding: 8px 14px;
+  font-size: 12px;
+  background: #fff3cd;
+  color: #664d03;
+  border-bottom: 1px solid #ffe69c;
+}
+
+@media (prefers-color-scheme: dark) {
+  .banner {
+    background: #3a3320;
+    color: #f0d27a;
+    border-bottom-color: #4d4326;
+  }
+}
+
+.results-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.results li {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+  font-size: 13px;
+}
+
+.results li:nth-child(even) {
+  background: var(--row-alt);
+}
+
+.results li:hover {
+  background: var(--hover);
+}
+
+.results .name {
+  font-weight: 500;
+}
+
+.results .path {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.statusbar {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+
+.hidden {
+  display: none !important;
+}

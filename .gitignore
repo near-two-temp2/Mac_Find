@@ -1,0 +1,50 @@
+# ---- 安全：绝不提交任何凭据 ----
+*GITHUB_DEPLOY*
+*.pem
+*.key
+.env
+.env.*
+*token*
+*secret*
+*credential*
+
+# ---- Rust ----
+target/
+Cargo.lock
+
+# ---- Go ----
+/**/Src_GO/**/bin/
+*.test
+
+# ---- C/C++ ----
+build/
+*.o
+*.obj
+*.a
+*.dylib
+CMakeCache.txt
+CMakeFiles/
+
+# ---- Swift ----
+.build/
+*.xcodeproj/xcuserdata/
+DerivedData/
+.swiftpm/
+
+# ---- Python ----
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+*.egg-info/
+
+# ---- Node / TypeScript ----
+node_modules/
+out/
+*.tsbuildinfo
+
+# ---- macOS ----
+.DS_Store
+*.app/
+*.idx

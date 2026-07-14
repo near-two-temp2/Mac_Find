@@ -1,0 +1,60 @@
+name: build-a-cpp
+
+on:
+  push:
+    paths:
+      - "Road_A/Src_CPP/**"
+      - ".github/workflows/build-a-cpp.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_A/Src_CPP
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt6 (Homebrew)
+        run: |
+          brew update
+          brew install qt@6 cmake
+
+      - name: Configure (CMake)
+        run: |
+          QT_PREFIX="$(brew --prefix qt@6)"
+          echo "Using Qt6 prefix: ${QT_PREFIX}"
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${QT_PREFIX}"
+
+      - name: Build
+        run: cmake --build build --config Release -j 3
+
+      - name: Verify artifacts
+        run: |
+          echo "== CLI smoke test =="
+          ./build/macfind-a-cli --help || true
+          # A real search on the CI runner's disk (bounded).
+          ./build/macfind-a-cli -m 5 bin || true
+          echo "== GUI bundle =="
+          ls -la build/
+          test -d build/MacFindRoadACpp.app && echo "OK: .app bundle produced"
+
+      - name: Package .app
+        run: |
+          mkdir -p dist
+          if [ -d build/MacFindRoadACpp.app ]; then
+            cp -R build/MacFindRoadACpp.app dist/
+          fi
+          cp build/macfind-a-cli dist/ || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-a-cpp-app
+          path: Road_A/Src_CPP/dist/
+          if-no-files-found: error

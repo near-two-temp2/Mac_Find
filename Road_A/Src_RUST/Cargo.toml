@@ -1,0 +1,40 @@
+[package]
+name = "mac-find-a-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Road_A (Rust): macOS instant filename search GUI backed by the searchfs() syscall (no index)"
+license = "BSD-3-Clause"
+rust-version = "1.74"
+
+# Shared engine library reused by both binaries.
+[lib]
+name = "mac_find_a_rust"
+path = "src/lib.rs"
+
+# GUI desktop app (default binary).
+[[bin]]
+name = "mac-find-gui"
+path = "src/main.rs"
+
+# CLI entry point used for CI smoke tests and scripting.
+[[bin]]
+name = "mac-find-cli"
+path = "src/cli.rs"
+
+[dependencies]
+# Raw FFI to the macOS searchfs()/fsgetpath() syscalls plus errno constants.
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# egui/eframe only pulled in on macOS; keeps `cargo check` cheap elsewhere and
+# avoids dragging a windowing stack into the CLI-only smoke path if ever built
+# on another host. eframe bundles egui + a native window backend.
+eframe = { version = "0.28", default-features = false, features = [
+    "default_fonts",
+    "glow",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

@@ -1,0 +1,59 @@
+{
+  "name": "mac-find-a-ts",
+  "productName": "Mac_Find Road A (TS)",
+  "version": "0.1.0",
+  "description": "macOS real-time filename search GUI using searchfs(2) via a Node native addon (Road A, no index).",
+  "author": "Mac_Find 18-matrix team",
+  "license": "BSD-3-Clause",
+  "main": "dist/main.js",
+  "bin": {
+    "mac-find-a-ts": "dist/cli.js"
+  },
+  "scripts": {
+    "install": "node -e \"process.exit(0)\"",
+    "build:addon": "node-gyp rebuild",
+    "build:main": "tsc -p tsconfig.json",
+    "build:renderer": "tsc -p tsconfig.renderer.json",
+    "build": "npm run build:addon && npm run build:main && npm run build:renderer && npm run pack",
+    "compile": "npm run build:addon && npm run build:main && npm run build:renderer",
+    "pack": "electron-builder --mac --publish never",
+    "start": "npm run compile && electron .",
+    "cli": "node dist/cli.js",
+    "smoke": "npm run compile && node dist/cli.js --check"
+  },
+  "dependencies": {
+    "bindings": "^1.5.0",
+    "node-addon-api": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "node-gyp": "^10.2.0",
+    "typescript": "^5.5.4"
+  },
+  "build": {
+    "appId": "org.macfind.road-a.ts",
+    "productName": "Mac_Find Road A (TS)",
+    "files": [
+      "dist/**/*",
+      "renderer/**/*",
+      "build/Release/*.node",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "build/Release/*.node"
+    ],
+    "mac": {
+      "target": [
+        "dir",
+        "dmg"
+      ],
+      "category": "public.app-category.utilities",
+      "identity": null
+    },
+    "directories": {
+      "output": "release"
+    }
+  }
+}

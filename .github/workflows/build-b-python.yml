@@ -1,0 +1,60 @@
+name: build-b-python
+
+on:
+  push:
+    paths:
+      - "Road_B/Src_PYTHON/**"
+      - ".github/workflows/build-b-python.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_B/Src_PYTHON
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyQt6 numpy pyinstaller
+
+      - name: Engine smoke test (headless)
+        run: |
+          python -m mac_find_b.cli smoke --max 5000
+
+      - name: Build .app with PyInstaller
+        run: |
+          pyinstaller \
+            --noconfirm \
+            --windowed \
+            --name "MacFindB" \
+            --collect-all PyQt6 \
+            --collect-all numpy \
+            app.py
+
+      - name: Show build output
+        run: |
+          ls -la dist
+          ls -la "dist/MacFindB.app/Contents/MacOS" || true
+
+      - name: Zip the .app
+        run: |
+          cd dist
+          zip -ry MacFindB-app.zip "MacFindB.app"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-b-python-app
+          path: Road_B/Src_PYTHON/dist/MacFindB-app.zip
+          if-no-files-found: error
