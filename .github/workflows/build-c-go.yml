@@ -43,8 +43,8 @@ jobs:
       - name: CLI smoke test (hybrid engine, no GUI) — x86_64
         env:
           GOARCH: amd64
-          CGO_CFLAGS: "-arch x86_64"
-          CGO_LDFLAGS: "-arch x86_64"
+          CGO_CFLAGS: "-arch x86_64 -mmacosx-version-min=12.0"
+          CGO_LDFLAGS: "-arch x86_64 -mmacosx-version-min=12.0"
           CC: "clang -arch x86_64"
         run: |
           go build -o macfind-cli ./cmd/macfind
@@ -68,10 +68,13 @@ jobs:
         # cmd/macfind and pass a bare `Icon.png` (matching FyneApp.toml).
         # `fyne package` runs its own `go build`; the cross env makes the
         # executable inside the .app x86_64 too.
+        # minos: append -mmacosx-version-min=12.0 so the executable inside the
+        # .app is tagged LC_BUILD_VERSION minos 12.0 and launches on the Intel
+        # macOS 12 dev box (Fyne/Go otherwise inherit the runner's high SDK).
         env:
           GOARCH: amd64
-          CGO_CFLAGS: "-arch x86_64"
-          CGO_LDFLAGS: "-arch x86_64"
+          CGO_CFLAGS: "-arch x86_64 -mmacosx-version-min=12.0"
+          CGO_LDFLAGS: "-arch x86_64 -mmacosx-version-min=12.0"
           CC: "clang -arch x86_64"
         working-directory: Road_C/Src_GO/cmd/macfind
         run: |
@@ -83,14 +86,30 @@ jobs:
           ls -la
 
       - name: Stage artifacts
+        # The .app is produced inside cmd/macfind (the package step chdir'd
+        # there), i.e. Road_C/Src_GO/cmd/macfind/MacFindRoadCGo.app. A previous
+        # `find . -maxdepth 2` from Road_C/Src_GO missed it (it sits at depth 3,
+        # ./cmd/macfind/MacFindRoadCGo.app), so only the bare CLI got staged.
+        # Reference the .app by its known path and hard-fail if it is absent.
         run: |
           mkdir -p dist
-          # Fyne 产出的 .app（若在包内某处，宽松查找并复制）
-          find . -maxdepth 2 -name "*.app" -exec cp -R {} dist/ \;
+          APP="cmd/macfind/MacFindRoadCGo.app"
+          if [ ! -d "$APP" ]; then
+            echo "::error::Expected $APP but fyne package did not produce it"
+            echo "--- contents of cmd/macfind ---"; ls -la cmd/macfind || true
+            exit 1
+          fi
+          cp -R "$APP" dist/
           cp macfind-cli dist/ || true
-          ls -la dist
-          # 确认产物是 Intel(x86_64)
-          find dist -name "*.app" -exec sh -c 'file "$1"/Contents/MacOS/*' _ {} \; || true
+          echo "--- dist tree ---"; ls -la dist
+          echo "--- .app executable(s) ---"; ls -la dist/MacFindRoadCGo.app/Contents/MacOS
+          # 确认 .app 内可执行是 Intel(x86_64) 且 minos ≤ 12（能在 macOS 12 跑）
+          APPBIN="$(ls dist/MacFindRoadCGo.app/Contents/MacOS/* | head -1)"
+          file "$APPBIN"
+          lipo -archs "$APPBIN"
+          lipo -archs "$APPBIN" | grep -qw x86_64
+          echo "--- minos (LC_BUILD_VERSION / LC_VERSION_MIN_MACOSX) ---"
+          otool -l "$APPBIN" | grep -A3 -E "LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX" | grep -E "minos|version" || true
           file dist/macfind-cli || true
 
       - name: Upload artifact
@@ -98,4 +117,4 @@ jobs:
         with:
           name: road-c-go-app
           path: Road_C/Src_GO/dist
-          if-no-files-found: warn
+          if-no-files-found: error
