@@ -24,14 +24,36 @@ jobs:
       # The arm64 runner's Homebrew qt is arm64-only, so it can't produce an Intel
       # binary. The official Qt6 macOS build (via aqtinstall) is a *universal*
       # (x86_64+arm64) framework; install that and let CMake emit the x86_64 slice.
+      #
+      # Version note: the macos-latest runner now ships Xcode 26 / macOS Tahoe,
+      # whose SDK dropped the legacy AGL framework. Qt's WrapOpenGL still linked
+      # `-framework AGL` until it was fixed in Qt 6.8.4 / 6.9.x, so older 6.8.*
+      # fails at link time with `ld: framework 'AGL' not found`. Pin >= 6.9 which
+      # ships the fix. (`arch: clang_64` is the universal macOS desktop build.)
       - name: Install Qt6 (official universal build)
         uses: jurplel/install-qt-action@v4
         with:
-          version: "6.8.*"
+          version: "6.9.*"
           host: mac
           target: desktop
           arch: clang_64
           cache: true
+
+      # Belt-and-suspenders: even with a fixed Qt, strip any residual `AGL`
+      # reference from Qt's CMake link interface so the link can't regress if aqt
+      # resolves a patch release that still mentions it. No-op when AGL is absent.
+      - name: Strip legacy AGL from Qt CMake (Tahoe SDK removed it)
+        run: |
+          echo "Qt root: ${QT_ROOT_DIR}"
+          if grep -rIl -- 'AGL' "${QT_ROOT_DIR}/lib/cmake" 2>/dev/null; then
+            grep -rIl -- 'AGL' "${QT_ROOT_DIR}/lib/cmake" | while read -r f; do
+              # Drop the AGL framework from any link line, keep everything else.
+              sed -i '' -E 's/(-framework )?AGL//g' "$f"
+              echo "patched: $f"
+            done
+          else
+            echo "No AGL references in Qt CMake — nothing to patch."
+          fi
 
       - name: Configure (CMake, target x86_64)
         run: |

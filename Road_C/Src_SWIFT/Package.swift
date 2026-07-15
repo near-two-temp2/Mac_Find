@@ -15,7 +15,11 @@ import PackageDescription
 let package = Package(
     name: "MacHaiFindC",
     platforms: [
-        .macOS(.v13)
+        // Dev machine runs macOS 12.7.6 (Intel); keep the minimum at 12 so the
+        // shipped .app opens there. All SwiftUI/AppKit APIs used by the GUI
+        // (foregroundStyle(.secondary/.tertiary), background(_:in:), Capsule,
+        // List(selection:), onChange(of:){v in}) are available on macOS 12.
+        .macOS(.v12)
     ],
     products: [
         .executable(name: "machaifind-c", targets: ["MacHaiFindC"])

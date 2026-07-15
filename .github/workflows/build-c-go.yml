@@ -61,6 +61,11 @@ jobs:
       - name: Package .app (Fyne GUI) — x86_64
         # v2.6.x flag names: -appID (camelCase), -sourceDir (not -app-id / -src).
         # fyne package requires an icon; Icon.png ships in cmd/macfind.
+        # NOTE: in fyne v2.6.x the tool chdir's into -sourceDir before resolving
+        # -icon, so the icon path must be RELATIVE TO -sourceDir. Passing
+        # `./cmd/macfind/Icon.png` made it look under cmd/macfind/cmd/macfind and
+        # fail with "Missing application icon". We therefore package from inside
+        # cmd/macfind and pass a bare `Icon.png` (matching FyneApp.toml).
         # `fyne package` runs its own `go build`; the cross env makes the
         # executable inside the .app x86_64 too.
         env:
@@ -68,13 +73,13 @@ jobs:
           CGO_CFLAGS: "-arch x86_64"
           CGO_LDFLAGS: "-arch x86_64"
           CC: "clang -arch x86_64"
+        working-directory: Road_C/Src_GO/cmd/macfind
         run: |
           "$(go env GOPATH)/bin/fyne" package \
             -os darwin \
             -name MacFindRoadCGo \
             -appID com.macfind.roadc.go \
-            -icon ./cmd/macfind/Icon.png \
-            -sourceDir ./cmd/macfind
+            -icon Icon.png
           ls -la
 
       - name: Stage artifacts

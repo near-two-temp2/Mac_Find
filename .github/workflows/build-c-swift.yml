@@ -17,6 +17,11 @@ permissions:
 jobs:
   build:
     runs-on: macos-latest
+    # Dev machine is macOS 12.7.6 (Intel). Pin the deployment target to 12.0 so
+    # every slice of the universal binary (and the .app's LSMinimumSystemVersion)
+    # allows launching there — otherwise LaunchServices refuses with -10825.
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "12.0"
     defaults:
       run:
         working-directory: Road_C/Src_SWIFT
@@ -73,7 +78,7 @@ jobs:
             <key>CFBundleShortVersionString</key><string>1.0</string>
             <key>CFBundlePackageType</key>     <string>APPL</string>
             <key>CFBundleExecutable</key>      <string>machaifind-c</string>
-            <key>LSMinimumSystemVersion</key>  <string>13.0</string>
+            <key>LSMinimumSystemVersion</key>  <string>12.0</string>
             <key>NSHighResolutionCapable</key> <true/>
             <key>LSUIElement</key>             <false/>
           </dict>
@@ -85,6 +90,21 @@ jobs:
           find "$APP" -type f
           # Prove the shipped binary carries both slices.
           lipo -info "$APP/Contents/MacOS/machaifind-c"
+
+      # Confirm the shipped app targets macOS 12 (opens on the Intel dev Mac).
+      - name: Verify deployment target (expect 12.0)
+        run: |
+          set -euo pipefail
+          APP="build/MacHaiFindC.app"
+          echo "== Info.plist LSMinimumSystemVersion =="
+          plutil -p "$APP/Contents/Info.plist" | grep -i LSMinimumSystemVersion
+          echo "== Mach-O per-slice minimum OS (expect 12.0 for each slice) =="
+          for arch in x86_64 arm64; do
+            echo "-- $arch --"
+            otool -arch "$arch" -l "$APP/Contents/MacOS/machaifind-c" \
+              | grep -A4 -E 'LC_BUILD_VERSION|LC_VERSION_MIN_MACOSX' \
+              | grep -iE 'minos|version' || true
+          done
 
       - name: Upload .app artifact
         uses: actions/upload-artifact@v4
