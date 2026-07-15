@@ -50,14 +50,6 @@ public final class MappedIndex {
         self.count = n
         self.bytesCount = blobLen
 
-        // Compute section offsets in the same order they were written.
-        var off = IndexFormat.headerSize
-        func section<T>(_ type: T.Type, _ elems: Int) -> UnsafeBufferPointer<T> {
-            let p = base.advanced(by: off).assumingMemoryBound(to: T.self)
-            off += elems * MemoryLayout<T>.stride
-            return UnsafeBufferPointer(start: p, count: elems)
-        }
-
         // Bounds sanity check before we build any pointers.
         let expected = IndexFormat.headerSize
             + n * (8 + 8 + 8 + 4 + 2 + 2 + 2 + 1) // per-entry bytes
@@ -65,6 +57,19 @@ public final class MappedIndex {
         guard expected <= length else {
             munmap(ptr, length)
             throw IndexError.truncated
+        }
+
+        // Compute section offsets in the same order they were written.
+        // `section` is a pure local closure over `mappedBase`/`off` only — it
+        // never touches `self`, so we can call it while `self` is still being
+        // initialized (Swift 6 forbids method calls on a partially-initialized
+        // `self`).
+        let mappedBase = UnsafeRawPointer(ptr)
+        var off = IndexFormat.headerSize
+        func section<T>(_ type: T.Type, _ elems: Int) -> UnsafeBufferPointer<T> {
+            let p = mappedBase.advanced(by: off).assumingMemoryBound(to: T.self)
+            off += elems * MemoryLayout<T>.stride
+            return UnsafeBufferPointer(start: p, count: elems)
         }
 
         self.masks = section(UInt64.self, n)

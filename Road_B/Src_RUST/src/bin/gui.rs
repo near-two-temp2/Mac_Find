@@ -144,12 +144,14 @@ impl App {
 
     /// 轮询后台索引线程消息。
     fn poll_indexing(&mut self, ctx: &egui::Context) {
-        let Some(rx) = &self.index_rx else {
-            return;
+        // 先把当前所有消息抽干到本地 Vec，随即释放对 self.index_rx 的借用，
+        // 之后再处理消息（其中 IndexMsg::Done 需要 &mut self 调 run_search）。
+        let msgs: Vec<IndexMsg> = match &self.index_rx {
+            Some(rx) => rx.try_iter().collect(),
+            None => return,
         };
-        // 一次性抽干当前所有消息。
         let mut done_or_failed = false;
-        while let Ok(msg) = rx.try_recv() {
+        for msg in msgs {
             match msg {
                 IndexMsg::Progress(p) => self.index_progress = p,
                 IndexMsg::Done { entry_count, path } => {

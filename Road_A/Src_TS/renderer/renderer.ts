@@ -5,6 +5,10 @@
  * bridge. Debounces keystrokes, collects options, and renders results.
  */
 
+// Mark this file as a module so `declare global` is a legal augmentation
+// (rather than a script-scope global declaration).
+export {};
+
 interface SearchOptions {
   dirsOnly?: boolean;
   filesOnly?: boolean;

@@ -70,7 +70,7 @@ func runGUI() {
 		func() fyne.CanvasObject {
 			return widget.NewLabel("")
 		},
-		func(o fyne.CanvasObject, id int) {
+		func(id widget.ListItemID, o fyne.CanvasObject) {
 			resultsMu.RLock()
 			defer resultsMu.RUnlock()
 			if id < 0 || id >= len(results) {
