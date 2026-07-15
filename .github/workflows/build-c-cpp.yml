@@ -58,13 +58,31 @@ jobs:
       - name: Configure (CMake, target x86_64)
         run: |
           echo "Qt root: ${QT_ROOT_DIR}"
+          # Pin the deployment target to macOS 12.0. The arm64 runner ships the
+          # macOS 26 (Tahoe) SDK, which otherwise stamps the binary's LC_BUILD_VERSION
+          # minos to 26 — LaunchServices on the user's macOS 12 host then refuses to
+          # open the .app (error -10825). 12.0 is Qt 6.9's official minimum.
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
             -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}"
 
       - name: Build
         run: cmake --build build --config Release -j 3
+
+      # The .app only links @rpath/QtWidgets|QtGui|QtCore and carries no
+      # Contents/Frameworks/, so on any machine other than this runner dyld fails
+      # with "Library not loaded: @rpath/QtWidgets.framework". macdeployqt copies
+      # the Qt frameworks + plugins into the bundle and rewrites the load paths so
+      # it's self-contained. The CLI links only libSystem, so it needs no deploy.
+      - name: Bundle Qt into .app (macdeployqt)
+        run: |
+          if [ -d build/MacFindRoadCCpp.app ]; then
+            "${QT_ROOT_DIR}/bin/macdeployqt" build/MacFindRoadCCpp.app -verbose=1
+          else
+            echo "No .app bundle to deploy — skipping macdeployqt."
+          fi
 
       - name: Verify artifacts (hybrid smoke test)
         run: |
@@ -96,6 +114,21 @@ jobs:
           echo "== GUI bundle =="
           ls -la build/
           test -d build/MacFindRoadCCpp.app && echo "OK: .app bundle produced"
+
+          if [ -d build/MacFindRoadCCpp.app ]; then
+            APP_BIN=build/MacFindRoadCCpp.app/Contents/MacOS/MacFindRoadCCpp
+
+            echo "== Deployment target (expect minos 12.0) =="
+            # LC_BUILD_VERSION.minos must read 12.0; anything higher (e.g. 26.0)
+            # means the Tahoe SDK leaked through and macOS 12 will reject the app.
+            otool -l "$APP_BIN" | grep -A3 LC_BUILD_VERSION || true
+
+            echo "== Qt frameworks bundled (expect Qt*.framework) =="
+            # macdeployqt must have populated Contents/Frameworks/; if this is
+            # empty the app will fail to launch off-runner with @rpath errors.
+            ls build/MacFindRoadCCpp.app/Contents/Frameworks || \
+              echo "WARNING: no Contents/Frameworks — macdeployqt did not run"
+          fi
 
       - name: Package .app
         run: |
