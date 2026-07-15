@@ -4,6 +4,13 @@ name: build-a-ts
 # Builds the native addon, compiles TS, packages the Electron app,
 # and uploads the .app / .dmg as an artifact. macOS runner is mandatory
 # because the addon links against searchfs(2) / fsgetpath().
+#
+# Target arch: x86_64 (Intel). The GitHub macos runner is arm64, so we
+# package the Electron app for --x64 and rebuild the native addon for x64
+# so it opens on users' Intel Macs. The addon is built twice on purpose:
+#   1) native (arm64) so the Node-based CLI smoke test can load it, then
+#   2) x64 against Electron's headers, right before packaging, so the
+#      shipped .node inside the .app is x86_64.
 
 on:
   push:
@@ -47,10 +54,30 @@ jobs:
           npm run build:renderer
 
       - name: CLI smoke test (engine load probe)
+        # Runs under the runner's native (arm64) Node, so the addon built
+        # above must match the runner arch. The x64 rebuild happens after.
         run: node dist/cli.js --check
 
-      - name: Package Electron app (.app + .dmg)
-        run: npm run pack
+      - name: Rebuild native addon for x64 (Electron target)
+        # The shipped .app is Intel/x64, so its bundled .node must be x86_64
+        # and ABI-compatible with Electron. Rebuild against Electron headers
+        # for --arch=x64 before packaging.
+        env:
+          npm_config_arch: x64
+          npm_config_target_arch: x64
+        run: |
+          ELECTRON_VER=$(node -p "require('electron/package.json').version")
+          echo "Rebuilding searchfs addon for x64 against Electron $ELECTRON_VER"
+          npx node-gyp rebuild \
+            --arch=x64 \
+            --target="$ELECTRON_VER" \
+            --dist-url=https://electronjs.org/headers
+          echo "--- addon arch check ---"
+          file build/Release/*.node
+          lipo -archs build/Release/*.node || true
+
+      - name: Package Electron app (.app + .dmg) — x64
+        run: npm run pack -- --x64
 
       - name: List build output
         run: |
@@ -58,6 +85,8 @@ jobs:
           ls -la release || true
           echo "--- .app bundles ---"
           find release -maxdepth 3 -name "*.app" || true
+          echo "--- shipped .node arch (must be x86_64) ---"
+          find release -name "*.node" -exec sh -c 'echo "$1:"; lipo -archs "$1" || file "$1"' _ {} \; || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

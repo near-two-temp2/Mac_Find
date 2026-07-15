@@ -30,6 +30,11 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
+      - name: Add Intel (x86_64) target
+        # runner 是 arm64，默认产物 arm64 在用户的 Intel Mac 上打不开(error -10661)，
+        # 因此显式交叉编译到 x86_64-apple-darwin。
+        run: "$HOME/.cargo/bin/rustup target add x86_64-apple-darwin"
+
       - name: Show versions
         run: |
           rustc --version
@@ -46,8 +51,8 @@ jobs:
           restore-keys: |
             cargo-c-rust-${{ runner.os }}-
 
-      - name: Build (release)
-        run: cargo build --release --bins
+      - name: Build (release, x86_64/Intel)
+        run: cargo build --release --bins --target x86_64-apple-darwin
 
       - name: Unit tests (engine/index/fuzzy/bitmask)
         run: cargo test --release
@@ -55,7 +60,8 @@ jobs:
       - name: CLI smoke test (index → search → doctor)
         run: |
           set -euxo pipefail
-          BIN=target/release/haifind-c-cli
+          # x86_64 二进制在 arm64 runner 上经 Rosetta 2（预装）运行。
+          BIN=target/x86_64-apple-darwin/release/haifind-c-cli
           # 建一个小索引（只遍历本目录 src/，秒级完成）。
           "$BIN" index --root src --out /tmp/smoke.idx
           # 用该索引搜索（应命中 main.rs 等）。
@@ -68,8 +74,8 @@ jobs:
           set -euxo pipefail
           APP="dist/HaiFind-C.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp target/release/haifind-c-gui "$APP/Contents/MacOS/HaiFind-C"
-          cp target/release/haifind-c-cli "$APP/Contents/MacOS/haifind-c-cli"
+          cp target/x86_64-apple-darwin/release/haifind-c-gui "$APP/Contents/MacOS/HaiFind-C"
+          cp target/x86_64-apple-darwin/release/haifind-c-cli "$APP/Contents/MacOS/haifind-c-cli"
           cat > "$APP/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -96,6 +102,6 @@ jobs:
           name: road-c-rust-app
           path: |
             Road_C/Src_RUST/dist/HaiFind-C.app
-            Road_C/Src_RUST/target/release/haifind-c-gui
-            Road_C/Src_RUST/target/release/haifind-c-cli
+            Road_C/Src_RUST/target/x86_64-apple-darwin/release/haifind-c-gui
+            Road_C/Src_RUST/target/x86_64-apple-darwin/release/haifind-c-cli
           if-no-files-found: error

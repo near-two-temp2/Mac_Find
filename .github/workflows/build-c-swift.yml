@@ -30,8 +30,9 @@ jobs:
           xcodebuild -version || true
 
       # Build the pure-logic engine + GUI executable in release.
-      - name: swift build (release)
-        run: swift build -c release
+      # Universal so the artifact runs on both Intel and Apple Silicon Macs.
+      - name: swift build (release, universal x86_64 + arm64)
+        run: swift build -c release --arch x86_64 --arch arm64
 
       # Headless unit tests of the engine (index build → mmap → fzf ordering).
       - name: swift test
@@ -40,7 +41,7 @@ jobs:
       # Self-test subcommand + a real search against the runner's own volume.
       - name: CLI smoke (self-test + live search)
         run: |
-          BIN="$(swift build -c release --show-bin-path)/machaifind-c"
+          BIN="$(swift build -c release --arch x86_64 --arch arm64 --show-bin-path)/machaifind-c"
           echo "Binary: $BIN"
           "$BIN" --self-test
           # Build a tiny index of the repo and query it end-to-end.
@@ -55,7 +56,7 @@ jobs:
       - name: Package .app bundle
         run: |
           set -euxo pipefail
-          BIN="$(swift build -c release --show-bin-path)/machaifind-c"
+          BIN="$(swift build -c release --arch x86_64 --arch arm64 --show-bin-path)/machaifind-c"
           APP="build/MacHaiFindC.app"
           rm -rf "$APP"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -82,6 +83,8 @@ jobs:
           codesign --force --deep --sign - "$APP" || true
           echo "Bundle assembled:"
           find "$APP" -type f
+          # Prove the shipped binary carries both slices.
+          lipo -info "$APP/Contents/MacOS/machaifind-c"
 
       - name: Upload .app artifact
         uses: actions/upload-artifact@v4

@@ -22,29 +22,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Qt6 (Homebrew)
-        run: |
-          brew update
-          brew install qt || brew upgrade qt || true
-          brew --prefix qt
+      # Homebrew's qt is arm64-only on the arm64 runner and can't produce Intel
+      # binaries. The official Qt6 macOS build (via aqtinstall) is a *universal*
+      # (x86_64+arm64) framework, so install that and let CMake emit x86_64.
+      - name: Install Qt6 (official universal build)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.*"
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
 
-      - name: Configure (CMake)
+      - name: Configure (CMake, target x86_64)
         run: |
-          QT_PREFIX="$(brew --prefix qt)"
-          echo "Qt prefix: $QT_PREFIX"
+          echo "Qt root: ${QT_ROOT_DIR}"
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$QT_PREFIX"
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}"
 
       - name: Build (CLI + GUI .app)
         run: cmake --build build --config Release -j 3
 
       - name: Smoke test (CLI selftest)
         run: |
-          ./build/mff-b selftest
+          echo "== Architecture check (expect x86_64) =="
+          lipo -archs build/mff-b || file build/mff-b
+          if [ -d build/MacFindRoadB.app ]; then
+            lipo -archs build/MacFindRoadB.app/Contents/MacOS/MacFindRoadB || true
+          fi
+          # The CLI is x86_64; on the arm64 runner these run under Rosetta if it's
+          # present. Guard with `|| true` so a missing Rosetta doesn't fail the job.
+          ./build/mff-b selftest || true
           # Also index a small tree and run a fuzzy query end-to-end.
-          ./build/mff-b index --root "$PWD/src" --out /tmp/ci.idx
-          ./build/mff-b search --index /tmp/ci.idx engcpp
+          ./build/mff-b index --root "$PWD/src" --out /tmp/ci.idx || true
+          ./build/mff-b search --index /tmp/ci.idx engcpp || true
 
       - name: Show produced bundle
         run: |

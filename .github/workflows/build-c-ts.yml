@@ -1,5 +1,12 @@
 name: build-c-ts
 
+# Road_C · TypeScript (Electron hybrid engine: binary index + searchfs fallback)
+# Target arch: x86_64 (Intel). The macos runner is arm64; we ship an Intel
+# .app so it opens on users' Intel Macs. electron-builder is configured for
+# x64 in package.json ("mac.target[].arch": "x64"). The node-gyp searchfs
+# addon is built twice: native (arm64) for the Node CLI smoke test, then x64
+# against Electron headers so the .node inside the .app is x86_64.
+
 on:
   push:
     paths:
@@ -47,15 +54,40 @@ jobs:
           echo "== search a common name =="
           node dist/cli/cli.js search package --limit 10 || true
 
-      - name: Package Electron .app / .dmg
-        run: npm run dist
+      - name: Rebuild native addon for x64 (Electron target)
+        # The shipped .app is Intel/x64, so its bundled .node must be x86_64
+        # and ABI-compatible with Electron. Rebuild against Electron headers
+        # for --arch=x64 before packaging. (npm run dist would re-run
+        # build:addon at native arch, so we run electron-builder directly.)
+        env:
+          npm_config_arch: x64
+          npm_config_target_arch: x64
+        run: |
+          ELECTRON_VER=$(node -p "require('electron/package.json').version")
+          echo "Rebuilding searchfs addon for x64 against Electron $ELECTRON_VER"
+          npx node-gyp rebuild \
+            --arch=x64 \
+            --target="$ELECTRON_VER" \
+            --dist-url=https://electronjs.org/headers
+          echo "--- addon arch check ---"
+          file build/Release/*.node
+          lipo -archs build/Release/*.node || true
+
+      - name: Package Electron .app / .dmg — x64
+        # Call electron-builder directly (not npm run dist) so the x64 addon
+        # rebuilt above is not overwritten by build:addon's native rebuild.
+        # arch comes from package.json mac.target[].arch = x64; --x64 is
+        # passed too as belt-and-suspenders.
+        run: npx electron-builder --mac --x64 --publish never
 
       - name: Verify artifacts
         run: |
           echo "== release dir =="
           ls -la release/ || true
-          test -d "release/mac-arm64/MacFindRoadCTs.app" && echo "OK: .app produced" || \
+          test -d "release/mac/MacFindRoadCTs.app" && echo "OK: .app produced (x64)" || \
             (test -d release/mac && echo "OK: mac dir produced" || echo "WARN: no .app found")
+          echo "== shipped .node arch (must be x86_64) =="
+          find release -name "*.node" -exec sh -c 'echo "$1:"; lipo -archs "$1" || file "$1"' _ {} \; || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -25,6 +25,10 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # GitHub macOS runners are arm64; add the Intel target so the shipped
+          # Tauri bundle is x86_64 and opens on Intel Macs (see build step below).
+          targets: x86_64-apple-darwin
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -35,6 +39,7 @@ jobs:
         run: |
           rustc --version
           cargo --version
+          rustup target list --installed
           node --version
           npm --version
 
@@ -65,23 +70,25 @@ jobs:
           # 再做一次真实的小规模索引 + 搜索（限量，避免全盘遍历）。
           ./target/release/haifind-tauri-search rs --root "$HOME" --max 20000 --limit 10 || true
 
-      - name: Build Tauri app (.app + .dmg)
-        run: npm run tauri build
+      - name: Build Tauri app (.app + .dmg) — Intel (x86_64) target
+        # Cross-compile to Intel so the app opens on Intel Macs. Bundles now land
+        # under target/x86_64-apple-darwin/release/bundle/ instead of target/release/.
+        run: npm run tauri build -- --target x86_64-apple-darwin
 
       - name: List build output
         run: |
           echo "--- bundle/macos ---"
-          ls -la src-tauri/target/release/bundle/macos || true
+          ls -la src-tauri/target/x86_64-apple-darwin/release/bundle/macos || true
           echo "--- bundle/dmg ---"
-          ls -la src-tauri/target/release/bundle/dmg || true
-          find src-tauri/target/release/bundle -maxdepth 2 -name "*.app" -o -name "*.dmg" || true
+          ls -la src-tauri/target/x86_64-apple-darwin/release/bundle/dmg || true
+          find src-tauri/target/x86_64-apple-darwin/release/bundle -maxdepth 2 -name "*.app" -o -name "*.dmg" || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: road-b-tauri-app
           path: |
-            Road_B/Src_TAURI/src-tauri/target/release/bundle/macos/**
-            Road_B/Src_TAURI/src-tauri/target/release/bundle/dmg/*.dmg
+            Road_B/Src_TAURI/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/**
+            Road_B/Src_TAURI/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 14

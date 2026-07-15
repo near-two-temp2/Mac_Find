@@ -26,6 +26,10 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          # GitHub macOS runners are arm64; add the Intel target so the shipped
+          # Tauri bundle is x86_64 and opens on Intel Macs (see build step below).
+          targets: x86_64-apple-darwin
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -36,6 +40,7 @@ jobs:
         run: |
           rustc --version
           cargo --version
+          rustup target list --installed
           node --version
           npm --version
           xcodebuild -version || true
@@ -71,20 +76,22 @@ jobs:
           # the CI runner may lack Full Disk Access.
           ./src-tauri/target/release/mac-find-cli --self-test
 
-      - name: Build Tauri app (.app + .dmg)
-        run: npm run tauri build
+      - name: Build Tauri app (.app + .dmg) — Intel (x86_64) target
+        # Cross-compile to Intel so the app opens on Intel Macs. Bundles now land
+        # under target/x86_64-apple-darwin/release/bundle/ instead of target/release/.
+        run: npm run tauri build -- --target x86_64-apple-darwin
 
       - name: List build output
         run: |
           echo "--- bundle/ ---"
-          find src-tauri/target/release/bundle -maxdepth 3 \( -name "*.app" -o -name "*.dmg" \) -print || true
+          find src-tauri/target/x86_64-apple-darwin/release/bundle -maxdepth 3 \( -name "*.app" -o -name "*.dmg" \) -print || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: road-a-tauri-app
           path: |
-            Road_A/Src_TAURI/src-tauri/target/release/bundle/macos/*.app
-            Road_A/Src_TAURI/src-tauri/target/release/bundle/dmg/*.dmg
+            Road_A/Src_TAURI/src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app
+            Road_A/Src_TAURI/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 14

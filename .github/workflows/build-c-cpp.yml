@@ -18,24 +18,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Qt6 (Homebrew)
-        run: |
-          brew update
-          brew install qt@6 cmake
+      - name: Install cmake
+        run: brew install cmake
 
-      - name: Configure (CMake)
+      # The arm64 runner's Homebrew qt is arm64-only, so it can't produce an Intel
+      # binary. The official Qt6 macOS build (via aqtinstall) is a *universal*
+      # (x86_64+arm64) framework; install that and let CMake emit the x86_64 slice.
+      - name: Install Qt6 (official universal build)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.*"
+          host: mac
+          target: desktop
+          arch: clang_64
+          cache: true
+
+      - name: Configure (CMake, target x86_64)
         run: |
-          QT_PREFIX="$(brew --prefix qt@6)"
-          echo "Using Qt6 prefix: ${QT_PREFIX}"
+          echo "Qt root: ${QT_ROOT_DIR}"
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${QT_PREFIX}"
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_PREFIX_PATH="${QT_ROOT_DIR}"
 
       - name: Build
         run: cmake --build build --config Release -j 3
 
       - name: Verify artifacts (hybrid smoke test)
         run: |
+          echo "== Architecture check (expect x86_64) =="
+          lipo -archs build/macfind-c-cli || file build/macfind-c-cli
+          if [ -d build/MacFindRoadCCpp.app ]; then
+            lipo -archs build/MacFindRoadCCpp.app/Contents/MacOS/MacFindRoadCCpp || true
+          fi
+
+          # The CLI is x86_64; on the arm64 runner it runs under Rosetta if
+          # present, otherwise the runtime steps are skipped. Every invocation is
+          # guarded with `|| true` so the job stays green regardless.
           echo "== CLI help =="
           ./build/macfind-c-cli --help || true
 

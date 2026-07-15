@@ -24,6 +24,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
 
       - name: Cache cargo registry & build
         uses: actions/cache@v4
@@ -36,23 +38,26 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-a-rust-
 
-      - name: Build (release)
-        run: cargo build --release
+      - name: Build (release, x86_64/Intel)
+        # Target Intel explicitly: the macos-latest runner is arm64, and an
+        # arm64 binary fails to launch on the user's Intel Mac (error -10661).
+        run: cargo build --release --target x86_64-apple-darwin
 
       - name: CLI smoke test (self-test)
+        # x86_64 binaries run on the arm64 runner via Rosetta 2 (preinstalled).
         run: |
-          ./target/release/mac-find-cli --help
+          ./target/x86_64-apple-darwin/release/mac-find-cli --help
           # Engine must run end-to-end without panicking. Zero hits is still a
           # pass: the CI runner may lack Full Disk Access.
-          ./target/release/mac-find-cli --self-test
+          ./target/x86_64-apple-darwin/release/mac-find-cli --self-test
 
       - name: Assemble .app bundle
         run: |
           APP="MacFind-RoadA-Rust.app"
           mkdir -p "dist/${APP}/Contents/MacOS"
           mkdir -p "dist/${APP}/Contents/Resources"
-          cp target/release/mac-find-gui "dist/${APP}/Contents/MacOS/MacFind"
-          cp target/release/mac-find-cli "dist/${APP}/Contents/MacOS/mac-find-cli"
+          cp target/x86_64-apple-darwin/release/mac-find-gui "dist/${APP}/Contents/MacOS/MacFind"
+          cp target/x86_64-apple-darwin/release/mac-find-cli "dist/${APP}/Contents/MacOS/mac-find-cli"
           cat > "dist/${APP}/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -79,6 +84,6 @@ jobs:
           name: road-a-rust-app
           path: |
             Road_A/Src_RUST/dist/**
-            Road_A/Src_RUST/target/release/mac-find-gui
-            Road_A/Src_RUST/target/release/mac-find-cli
+            Road_A/Src_RUST/target/x86_64-apple-darwin/release/mac-find-gui
+            Road_A/Src_RUST/target/x86_64-apple-darwin/release/mac-find-cli
           if-no-files-found: error

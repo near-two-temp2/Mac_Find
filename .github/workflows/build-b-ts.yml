@@ -1,5 +1,11 @@
 name: build-b-ts
 
+# Road_B · TypeScript (Electron, self-built binary index + fzf scoring)
+# Target arch: x86_64 (Intel). The macos runner is arm64; we ship an Intel
+# .app so it opens on users' Intel Macs. Road_B has NO native addon (the
+# index engine is pure JS/TypeScript — no binding.gyp), so there is nothing
+# to cross-compile; making the Electron package x64 is sufficient.
+
 on:
   push:
     paths:
@@ -34,12 +40,16 @@ jobs:
       - name: Smoke test (index + search over own sources)
         run: npm run smoke
 
-      - name: Package macOS app (electron-builder)
-        run: npm run package
+      - name: Package macOS app (electron-builder) — x64
+        run: npm run package -- --x64
 
       - name: List build output
         if: always()
-        run: ls -laR release || true
+        run: |
+          ls -laR release || true
+          echo "--- Electron framework arch (must be x86_64) ---"
+          find release -name "Electron Framework" -maxdepth 6 -exec lipo -archs {} \; 2>/dev/null || true
+          find release -name "*.app" -maxdepth 3 -exec sh -c 'lipo -archs "$1/Contents/MacOS/"* 2>/dev/null' _ {} \; || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -24,12 +24,12 @@ jobs:
           swift --version
           xcodebuild -version || true
 
-      - name: Build (release)
-        run: swift build -c release
+      - name: Build (release, universal x86_64 + arm64)
+        run: swift build -c release --arch x86_64 --arch arm64
 
       - name: CLI smoke test (--self-test)
         run: |
-          BIN=$(swift build -c release --show-bin-path)/MacHaiFindA
+          BIN=$(swift build -c release --arch x86_64 --arch arm64 --show-bin-path)/MacHaiFindA
           echo "Binary: $BIN"
           "$BIN" --self-test
           # A real search against a term that exists on the runner's system volume.
@@ -37,7 +37,7 @@ jobs:
 
       - name: Package .app bundle
         run: |
-          BINDIR=$(swift build -c release --show-bin-path)
+          BINDIR=$(swift build -c release --arch x86_64 --arch arm64 --show-bin-path)
           APP="MacHaiFindA.app"
           rm -rf "$APP"
           mkdir -p "$APP/Contents/MacOS"
@@ -64,6 +64,8 @@ jobs:
           PLIST
           echo "Bundled app tree:"
           ls -R "$APP"
+          # Prove the shipped binary carries both slices.
+          lipo -info "$APP/Contents/MacOS/MacHaiFindA"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

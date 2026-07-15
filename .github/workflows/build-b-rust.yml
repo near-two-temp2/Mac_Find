@@ -28,11 +28,14 @@ jobs:
           fi
           rustup update stable
           rustup default stable
+          # 产物必须是 Intel(x86_64)：runner 是 arm64，arm64 二进制在用户的
+          # Intel Mac 上打不开(error -10661)。
+          rustup target add x86_64-apple-darwin
           rustc --version
           cargo --version
 
-      - name: Cargo build (release)
-        run: cargo build --release --locked || cargo build --release
+      - name: Cargo build (release, x86_64/Intel)
+        run: cargo build --release --target x86_64-apple-darwin --locked || cargo build --release --target x86_64-apple-darwin
 
       - name: Cargo test
         run: cargo test --release || cargo test
@@ -41,21 +44,22 @@ jobs:
         run: |
           set -euo pipefail
           IDX="$RUNNER_TEMP/haifind-ci.idx"
+          # x86_64 二进制在 arm64 runner 上经 Rosetta 2（预装）运行。
           # 用仓库自身目录做小规模索引，避免全盘遍历。
-          ./target/release/haifind-index "$GITHUB_WORKSPACE" --out "$IDX" --max 20000
+          ./target/x86_64-apple-darwin/release/haifind-index "$GITHUB_WORKSPACE" --out "$IDX" --max 20000
           echo "--- 搜索 'Cargo' ---"
-          ./target/release/haifind-search Cargo --index "$IDX" --limit 20
+          ./target/x86_64-apple-darwin/release/haifind-search Cargo --index "$IDX" --limit 20
           echo "--- 搜索 'main.rs'（仅文件） ---"
-          ./target/release/haifind-search main.rs --index "$IDX" --files --limit 20
+          ./target/x86_64-apple-darwin/release/haifind-search main.rs --index "$IDX" --files --limit 20
 
       - name: Package app bundle
         run: |
           set -euo pipefail
           APP="$RUNNER_TEMP/dist/MacHaiFind-B-Rust.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-          cp target/release/haifind-gui   "$APP/Contents/MacOS/MacHaiFind-B-Rust"
-          cp target/release/haifind-index "$APP/Contents/MacOS/haifind-index"
-          cp target/release/haifind-search "$APP/Contents/MacOS/haifind-search"
+          cp target/x86_64-apple-darwin/release/haifind-gui   "$APP/Contents/MacOS/MacHaiFind-B-Rust"
+          cp target/x86_64-apple-darwin/release/haifind-index "$APP/Contents/MacOS/haifind-index"
+          cp target/x86_64-apple-darwin/release/haifind-search "$APP/Contents/MacOS/haifind-search"
           cat > "$APP/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
