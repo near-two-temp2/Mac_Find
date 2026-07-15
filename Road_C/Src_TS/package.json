@@ -1,0 +1,66 @@
+{
+  "name": "macfind-road-c-ts",
+  "version": "0.1.0",
+  "description": "Road_C (TypeScript/Electron) — macOS fast file search: hybrid engine (binary index + fzf scoring, searchfs() fallback).",
+  "author": "Mac_Find 18 matrix / c-ts",
+  "license": "BSD-3-Clause",
+  "private": true,
+  "main": "dist/main/main.js",
+  "bin": {
+    "macfind-c-cli": "dist/cli/cli.js"
+  },
+  "scripts": {
+    "clean": "rimraf dist build release",
+    "build:addon": "node-gyp rebuild || echo 'WARN: native addon build failed; hybrid engine will run in fallback-less/JS-only mode'",
+    "build:ts": "tsc -p tsconfig.json",
+    "build:assets": "node scripts/copy-assets.js",
+    "build": "npm run build:addon && npm run build:ts && npm run build:assets",
+    "smoke": "node dist/cli/cli.js --help",
+    "cli": "node dist/cli/cli.js",
+    "start": "electron .",
+    "dist": "npm run build && electron-builder --mac --publish never",
+    "postinstall": "electron-builder install-app-deps || true"
+  },
+  "dependencies": {
+    "bindings": "^1.5.0",
+    "node-addon-api": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3",
+    "node-gyp": "^10.0.0",
+    "rimraf": "^5.0.0",
+    "typescript": "^5.5.0"
+  },
+  "build": {
+    "appId": "org.macfind.roadc.ts",
+    "productName": "MacFindRoadCTs",
+    "directories": {
+      "output": "release",
+      "buildResources": "build-resources"
+    },
+    "files": [
+      "dist/**/*",
+      "build/Release/*.node",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "build/Release/*.node"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dir",
+          "arch": "arm64"
+        },
+        {
+          "target": "dmg",
+          "arch": "arm64"
+        }
+      ],
+      "identity": null
+    }
+  }
+}

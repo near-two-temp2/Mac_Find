@@ -24,8 +24,11 @@
 //!
 //! `EntryMeta`（16 bytes，`repr(C)`）：byte_offset(u32) / byte_len(u16) /
 //! bn_start(u16) / ext_id(u32) / is_dir(u8) / _pad(u8×3)。
+//!
+//! 该格式与 Road_B/Src_RUST 的 egui 实现完全一致（同一套二进制契约），
+//! 方便三路线 × 多语言矩阵之间做对比与交叉验证。
 
-use crate::bitmask;
+use crate::engine::bitmask;
 use memmap2::Mmap;
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
@@ -270,9 +273,8 @@ impl IndexReader {
         if mmap.len() < HEADER_LEN {
             return Err(io::Error::new(io::ErrorKind::InvalidData, "索引文件过小"));
         }
-        let rd_u64 = |off: usize| -> u64 {
-            u64::from_le_bytes(mmap[off..off + 8].try_into().unwrap())
-        };
+        let rd_u64 =
+            |off: usize| -> u64 { u64::from_le_bytes(mmap[off..off + 8].try_into().unwrap()) };
         let magic = rd_u64(0);
         if magic != MAGIC {
             return Err(io::Error::new(
@@ -389,8 +391,7 @@ mod tests {
         w.add_path("/Users/me/src", true);
         w.add_path("/Applications/Xcode.app", true);
 
-        let tmp =
-            std::env::temp_dir().join(format!("haifind_test_idx_{}.idx", std::process::id()));
+        let tmp = std::env::temp_dir().join("haifind_tauri_test_idx.idx");
         let stats = w.write_to(&tmp).unwrap();
         assert_eq!(stats.entry_count, 3);
 

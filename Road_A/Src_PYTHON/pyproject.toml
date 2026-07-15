@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mac-find-a-python"
+version = "0.1.0"
+description = "Road_A: macOS fast filename search GUI using searchfs() via pure ctypes (no index)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "Mac_Find 18 implementation matrix — a-python" }]
+dependencies = [
+    "PyQt6>=6.6,<7",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.3"]
+
+[project.scripts]
+mac-find-a = "mac_find_a.cli:main"
+
+[project.gui-scripts]
+mac-find-a-gui = "mac_find_a.app:main"
+
+[tool.setuptools]
+packages = ["mac_find_a"]
+
+[tool.setuptools.package-dir]
+"" = "."

@@ -1,0 +1,45 @@
+[package]
+name = "mac-hai-find-b-tauri"
+version = "0.1.0"
+edition = "2021"
+description = "Road_B (Tauri): macOS 极速文件搜索 GUI — Rust 后端自建 mmap 二进制索引 + 并行 bitmask 预过滤 + fzf 评分，TypeScript 前端"
+license = "MIT"
+publish = false
+
+# Tauri v2 标准布局：库 crate（含 #[tauri::command] 与 run()）+ 二进制入口。
+# 库名与 main.rs 中的 `haifind_tauri_lib::run()` 对应。
+[lib]
+name = "haifind_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# GUI 可执行入口。
+[[bin]]
+name = "mac-hai-find-b-tauri"
+path = "src/main.rs"
+
+# CLI：建索引 + 查索引，复用同一引擎，供 CI 冒烟测试。
+[[bin]]
+name = "haifind-tauri-search"
+path = "src/bin/search.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 搜索引擎依赖（与 Road_B/Src_RUST 保持一致）。
+memmap2 = "0.9"          # mmap 加载二进制索引
+rayon = "1.10"           # Phase 1 并行 bitmask 预过滤
+walkdir = "2.5"          # 遍历文件系统建索引
+dirs = "5.0"             # 定位 ~/Library/Caches 索引目录
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

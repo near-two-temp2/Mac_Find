@@ -1,0 +1,38 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MacFind Road C (Tauri)",
+  "version": "0.1.0",
+  "identifier": "com.macfind.roadc.tauri",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build:frontend",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "MacFind — Road C (Hybrid)",
+        "width": 900,
+        "height": 640,
+        "minWidth": 560,
+        "minHeight": 400,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": ["icons/icon.png"],
+    "category": "public.app-category.utilities",
+    "shortDescription": "Hybrid macOS file search",
+    "longDescription": "Fast macOS filename search: self-built mmap binary index with rayon parallel bitmask pre-filter and fzf scoring, falling back to the searchfs(2) syscall when the index is unavailable.",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
+  }
+}

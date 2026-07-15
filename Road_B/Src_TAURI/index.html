@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MacHaiFind · Road B (Tauri)</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="logo">🔎</span>
+          <div class="titles">
+            <h1>MacHaiFind</h1>
+            <p class="subtitle">Road B · 自建二进制索引 + fzf 模糊搜索</p>
+          </div>
+        </div>
+        <div class="index-controls">
+          <button id="build-btn" class="btn primary" type="button">建立索引</button>
+          <label class="max-field">
+            上限
+            <input id="max-entries" type="number" min="0" step="1000" value="50000" />
+          </label>
+        </div>
+      </header>
+
+      <section class="search-row">
+        <input
+          id="query"
+          class="query-input"
+          type="text"
+          placeholder="输入文件名 / 片段（支持模糊子序列，如 mnrs → main.rs）"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <div class="kind-toggle" role="group" aria-label="类型过滤">
+          <button class="kind active" data-kind="all" type="button">全部</button>
+          <button class="kind" data-kind="files" type="button">文件</button>
+          <button class="kind" data-kind="dirs" type="button">目录</button>
+        </div>
+      </section>
+
+      <div id="status" class="status">正在检测索引状态…</div>
+
+      <main class="results" id="results" aria-live="polite"></main>
+
+      <footer class="footer">
+        <span id="stats">就绪</span>
+        <span class="hint">Rust 后端：mmap 索引 + rayon bitmask 预过滤 + fzf 评分</span>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

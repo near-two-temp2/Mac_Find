@@ -1,0 +1,5 @@
+# Runtime + build dependencies for Road_A Python GUI.
+# Pinned to major versions known to ship macOS arm64 wheels.
+PyQt6>=6.6,<7
+# Build-only (packaging into a .app); harmless as a runtime dep too.
+pyinstaller>=6.3

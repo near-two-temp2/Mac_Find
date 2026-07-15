@@ -1,0 +1,46 @@
+[package]
+name = "mac-find-tauri"
+version = "0.1.0"
+description = "Road A — macOS instant filename search (searchfs) as a Tauri desktop app"
+authors = ["Mac_Find 21 implementation matrix"]
+edition = "2021"
+rust-version = "1.77"
+
+# The library that the Tauri app links against. `cdylib` for the mobile/desktop
+# shared lib, `staticlib`/`rlib` so the same engine code can be reused by the
+# CLI smoke-test binary below.
+[lib]
+name = "mac_find_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# GUI entry point (Tauri).
+[[bin]]
+name = "mac-find-tauri"
+path = "src/main.rs"
+
+# Headless CLI entry point used by CI for a smoke test of the searchfs engine
+# without needing a window server.
+[[bin]]
+name = "mac-find-cli"
+path = "src/bin/cli.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+
+[features]
+# This feature is used by production builds to enable Tauri's custom protocol.
+# DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

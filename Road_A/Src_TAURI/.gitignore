@@ -1,0 +1,14 @@
+# Node / Vite
+node_modules/
+dist/
+*.log
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# Generated icons (icon.icns is produced by `tauri icon` in CI)
+src-tauri/icons/icon.icns
+
+# macOS
+.DS_Store

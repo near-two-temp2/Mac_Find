@@ -1,0 +1,71 @@
+name: build-c-go
+
+# Road_C · Go — 混合完整版 GUI (Fyne)。仅在本实现目录或本 workflow 变更时触发。
+on:
+  push:
+    paths:
+      - "Road_C/Src_GO/**"
+      - ".github/workflows/build-c-go.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_C/Src_GO
+    env:
+      CGO_ENABLED: "1" # Fyne (OpenGL/cgo) 与 searchfs cgo 兜底都需要
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: Road_C/Src_GO/go.sum
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests (bitmask / fuzzy / index)
+        run: go test ./internal/...
+
+      - name: CLI smoke test (hybrid engine, no GUI)
+        run: |
+          go build -o macfind-cli ./cmd/macfind
+          ./macfind-cli selftest
+
+      - name: Install Fyne packaging tool
+        run: go install fyne.io/fyne/v2/cmd/fyne@v2.6.3
+
+      - name: Package .app (Fyne GUI)
+        # v2.6.x flag names: -appID (camelCase), -sourceDir (not -app-id / -src).
+        # fyne package requires an icon; Icon.png ships in cmd/macfind.
+        run: |
+          "$(go env GOPATH)/bin/fyne" package \
+            -os darwin \
+            -name MacFindRoadCGo \
+            -appID com.macfind.roadc.go \
+            -icon ./cmd/macfind/Icon.png \
+            -sourceDir ./cmd/macfind
+          ls -la
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p dist
+          # Fyne 产出的 .app（若在包内某处，宽松查找并复制）
+          find . -maxdepth 2 -name "*.app" -exec cp -R {} dist/ \;
+          cp macfind-cli dist/ || true
+          ls -la dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-c-go-app
+          path: Road_C/Src_GO/dist
+          if-no-files-found: warn

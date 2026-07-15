@@ -1,0 +1,74 @@
+name: build-a-swift
+
+# Road_A / Swift — searchfs() 无索引实时搜索 GUI (SwiftUI)
+# 权威构建环境：GitHub Actions macos-latest runner。
+on:
+  push:
+    paths:
+      - "Road_A/Src_SWIFT/**"
+      - ".github/workflows/build-a-swift.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_A/Src_SWIFT
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version || true
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: CLI smoke test (--self-test)
+        run: |
+          BIN=$(swift build -c release --show-bin-path)/MacHaiFindA
+          echo "Binary: $BIN"
+          "$BIN" --self-test
+          # A real search against a term that exists on the runner's system volume.
+          "$BIN" "usr" --dirs-only --limit 5 || true
+
+      - name: Package .app bundle
+        run: |
+          BINDIR=$(swift build -c release --show-bin-path)
+          APP="MacHaiFindA.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS"
+          mkdir -p "$APP/Contents/Resources"
+          cp "$BINDIR/MacHaiFindA" "$APP/Contents/MacOS/MacHaiFindA"
+          # Minimal Info.plist so LaunchServices treats it as a GUI app.
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>MacHaiFindA</string>
+            <key>CFBundleDisplayName</key><string>Mac Hai Find (Road_A)</string>
+            <key>CFBundleIdentifier</key><string>org.machaifind.roada.swift</string>
+            <key>CFBundleExecutable</key><string>MacHaiFindA</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleVersion</key><string>1.0</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+            <key>NSPrincipalClass</key><string>NSApplication</string>
+          </dict>
+          </plist>
+          PLIST
+          echo "Bundled app tree:"
+          ls -R "$APP"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-a-swift-app
+          path: |
+            Road_A/Src_SWIFT/MacHaiFindA.app
+          if-no-files-found: error

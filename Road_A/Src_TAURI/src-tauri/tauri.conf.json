@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MacFind Road A (Tauri)",
+  "version": "0.1.0",
+  "identifier": "org.macfind.roada.tauri",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "MacFind — Road A (searchfs)",
+        "width": 900,
+        "height": 640,
+        "minWidth": 560,
+        "minHeight": 400,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "Utility",
+    "shortDescription": "Instant macOS filename search via searchfs()",
+    "longDescription": "Road A of the Mac_Find 21-implementation matrix: a Tauri desktop app whose Rust backend calls the macOS searchfs() syscall for index-free, real-time filename search, with a TypeScript front end.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

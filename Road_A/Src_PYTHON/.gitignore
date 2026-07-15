@@ -1,0 +1,14 @@
+# PyInstaller / build outputs
+build/
+dist/
+*.spec.bak
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# venvs
+.venv/
+venv/

@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MacFind — Road A (searchfs)</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="toolbar">
+        <div class="search-row">
+          <input
+            id="term"
+            class="term"
+            type="text"
+            placeholder="Search filenames…  (searchfs live scan)"
+            autocomplete="off"
+            spellcheck="false"
+            autofocus
+          />
+          <button id="go" class="go">Search</button>
+        </div>
+        <div class="options">
+          <label><input type="radio" name="kind" value="all" checked /> All</label>
+          <label><input type="radio" name="kind" value="files" /> Files only</label>
+          <label><input type="radio" name="kind" value="dirs" /> Dirs only</label>
+          <span class="sep"></span>
+          <label><input type="checkbox" id="case" /> Case-sensitive</label>
+          <label><input type="checkbox" id="exact" /> Exact match</label>
+          <span class="sep"></span>
+          <label class="limit">
+            Limit
+            <input type="number" id="limit" min="0" step="100" value="1000" />
+          </label>
+        </div>
+      </header>
+
+      <main>
+        <div id="results" class="results" role="listbox" aria-label="Search results"></div>
+      </main>
+
+      <footer id="status" class="status">Ready.</footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

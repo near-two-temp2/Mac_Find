@@ -13,9 +13,10 @@
 //! 间隙延续   -1
 //! ```
 
-use crate::bitmask;
-use crate::index::IndexReader;
+use crate::engine::bitmask;
+use crate::engine::index::IndexReader;
 use rayon::prelude::*;
+use serde::Serialize;
 
 /// 搜索选项。
 #[derive(Debug, Clone)]
@@ -45,8 +46,21 @@ pub enum KindFilter {
     DirsOnly,
 }
 
+impl KindFilter {
+    /// 从前端传入的字符串解析（"all" / "files" / "dirs"）。
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "files" => KindFilter::FilesOnly,
+            "dirs" => KindFilter::DirsOnly,
+            _ => KindFilter::All,
+        }
+    }
+}
+
 /// 一条搜索结果。
-#[derive(Debug, Clone)]
+///
+/// `#[derive(Serialize)]` 让它能直接经 `#[tauri::command]` 序列化给 TS 前端。
+#[derive(Debug, Clone, Serialize)]
 pub struct Match {
     /// entry 下标。
     pub index: usize,
@@ -76,7 +90,7 @@ pub fn search(reader: &IndexReader, query: &str, opts: &SearchOptions) -> Vec<Ma
         return Vec::new();
     }
 
-    // 查询预处理：小写、拆分空格分隔的多 token（AND 语义，逐 token bitmask）。
+    // 查询预处理：小写。
     let query_lower: Vec<u8> = query
         .trim()
         .bytes()
@@ -132,15 +146,13 @@ pub fn search(reader: &IndexReader, query: &str, opts: &SearchOptions) -> Vec<Ma
             // 优先在 basename 上匹配（命中率与相关性更高），失败再退化到全路径。
             let bn = &text[meta.bn_start as usize..];
             let bn_off = meta.bn_start as usize;
-            if let Some((mut score, s, e)) =
-                fuzzy_score(&query_lower, bn, bounds[i], bn_off)
-            {
+            if let Some((mut score, s, e)) = fuzzy_score(&query_lower, bn, bounds[i], bn_off) {
                 // basename 命中额外加成，让 "main.rs" 排在含 main 的深层路径之前。
                 score += 12;
-                return Some(make_match(reader, i, score, s, e, text, meta.is_dir != 0));
+                return Some(make_match(i, score, s, e, text, meta.is_dir != 0));
             }
             if let Some((score, s, e)) = fuzzy_score(&query_lower, text, bounds[i], 0) {
-                return Some(make_match(reader, i, score, s, e, text, meta.is_dir != 0));
+                return Some(make_match(i, score, s, e, text, meta.is_dir != 0));
             }
             None
         })
@@ -157,7 +169,6 @@ pub fn search(reader: &IndexReader, query: &str, opts: &SearchOptions) -> Vec<Ma
 }
 
 fn make_match(
-    _reader: &IndexReader,
     index: usize,
     score: i32,
     match_start: usize,
@@ -208,7 +219,7 @@ fn query_ext_id(query_lower: &[u8]) -> u32 {
     if query_lower.contains(&b'/') {
         return 0;
     }
-    crate::index::ext_id_of(query_lower)
+    crate::engine::index::ext_id_of(query_lower)
 }
 
 /// fzf 评分核心：在 `text`（已小写）中模糊匹配 `pattern`（已小写）。
@@ -321,21 +332,21 @@ fn score_from_anchor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::index::IndexWriter;
+    use crate::engine::index::IndexWriter;
 
     fn build(paths: &[(&str, bool)]) -> IndexReader {
         use std::sync::atomic::{AtomicU64, Ordering};
-        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        // 每次调用用唯一文件名：测试默认多线程并行，若共用 PID 文件名会相互
+        // 覆盖/删除，导致读到截断文件（"索引文件过小"）。用原子计数器隔离。
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let mut w = IndexWriter::new();
         for (p, d) in paths {
             w.add_path(p, *d);
         }
-        // 每次调用唯一文件名：cargo test 默认并行，固定/仅 pid 的名字会让多个测试
-        // 争用同一文件、读到截断内容而偶发失败。加原子计数器后缀彻底隔离。
         let tmp = std::env::temp_dir().join(format!(
-            "haifind_search_test_{}_{}.idx",
+            "haifind_tauri_search_test_{}_{}.idx",
             std::process::id(),
-            COUNTER.fetch_add(1, Ordering::Relaxed)
+            SEQ.fetch_add(1, Ordering::Relaxed)
         ));
         w.write_to(&tmp).unwrap();
         let r = IndexReader::open(&tmp).unwrap();
@@ -368,10 +379,7 @@ mod tests {
 
     #[test]
     fn kind_filter() {
-        let r = build(&[
-            ("/a/foo", true),
-            ("/a/foo.txt", false),
-        ]);
+        let r = build(&[("/a/foo", true), ("/a/foo.txt", false)]);
         let mut opts = SearchOptions::default();
         opts.kind = KindFilter::DirsOnly;
         let res = search(&r, "foo", &opts);

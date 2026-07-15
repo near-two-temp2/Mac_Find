@@ -1,0 +1,11 @@
+# 前端
+node_modules/
+dist/
+.DS_Store
+npm-debug.log*
+
+# Rust / Tauri
+src-tauri/target/
+src-tauri/gen/
+
+# 注意：package-lock.json 必须提交（CI 的 npm ci 依赖它）。

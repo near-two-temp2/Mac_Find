@@ -1,0 +1,62 @@
+name: build-a-python
+
+# Road_A · Python — PyQt6 GUI + pure-ctypes searchfs() engine (no index).
+# Authoritative build: macos-latest runner packages a .app via PyInstaller.
+
+on:
+  push:
+    paths:
+      - "Road_A/Src_PYTHON/**"
+      - ".github/workflows/build-a-python.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: Road_A/Src_PYTHON
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Import / struct-layout smoke test
+        run: |
+          python -c "import mac_find_a.searchfs_engine as e, ctypes; \
+            assert e.searchfs_available(), e.load_error(); \
+            assert ctypes.sizeof(e.searchstate) == 556; \
+            assert ctypes.sizeof(e.attrlist) == 24; \
+            assert ctypes.sizeof(e.packed_result) == 20; \
+            print('struct layout OK')"
+
+      - name: CLI self-test (searchfs binding)
+        run: python -m mac_find_a.cli --self-test
+
+      - name: CLI live search smoke test
+        run: python -m mac_find_a.cli -d -m 5 Applications
+
+      - name: Build .app with PyInstaller
+        run: pyinstaller --noconfirm MacFindA.spec
+
+      - name: Verify .app bundle produced
+        run: |
+          test -d dist/MacFindA.app || (echo "MacFindA.app not built" && exit 1)
+          ls -la dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-a-python-app
+          path: Road_A/Src_PYTHON/dist/MacFindA.app
+          if-no-files-found: error

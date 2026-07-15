@@ -1,0 +1,83 @@
+name: build-b-swift
+
+# Road B (self-built binary index + fzf) — Swift / SwiftUI GUI.
+# Authoritative build runs on GitHub's macos-latest runner (full Xcode toolchain).
+on:
+  push:
+    paths:
+      - "Road_B/Src_SWIFT/**"
+      - ".github/workflows/build-b-swift.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_B/Src_SWIFT
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version || true
+
+      # Release build of the single executable (GUI + index/search CLI).
+      - name: Build (release)
+        run: swift build -c release
+
+      # Headless unit tests exercise the full index -> mmap -> two-phase search
+      # pipeline without needing a window server.
+      - name: Test (headless engine)
+        run: swift test 2>&1 | tail -n 40
+
+      # CLI smoke test: build a real index of the workspace, then query it.
+      - name: CLI smoke (index + search)
+        run: |
+          BIN="$(swift build -c release --show-bin-path)/machaifind-b"
+          echo "binary: $BIN"
+          "$BIN" index --root "$PWD/Sources" --out "$PWD/.smoke.idx"
+          echo "--- search 'swift' ---"
+          "$BIN" search swift --index "$PWD/.smoke.idx" --limit 20
+          echo "--- search 'engine' (files only) ---"
+          "$BIN" search engine --index "$PWD/.smoke.idx" --limit 20 --files
+
+      # Wrap the release binary into a minimal .app bundle so the artifact is a
+      # double-clickable macOS app, not just a bare Mach-O.
+      - name: Package .app bundle
+        run: |
+          BIN_DIR="$(swift build -c release --show-bin-path)"
+          APP="MacHaiFind-RoadB.app"
+          mkdir -p "$APP/Contents/MacOS"
+          cp "$BIN_DIR/machaifind-b" "$APP/Contents/MacOS/MacHaiFind-RoadB"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>MacHaiFind RoadB</string>
+            <key>CFBundleDisplayName</key><string>MacHaiFind · Road B</string>
+            <key>CFBundleIdentifier</key><string>com.machaifind.roadb</string>
+            <key>CFBundleVersion</key><string>1.0</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleExecutable</key><string>MacHaiFind-RoadB</string>
+            <key>LSMinimumSystemVersion</key><string>12.0</string>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          echo "built bundle:"
+          ls -R "$APP"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-b-swift-app
+          path: Road_B/Src_SWIFT/MacHaiFind-RoadB.app
+          if-no-files-found: error

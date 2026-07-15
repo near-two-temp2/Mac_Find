@@ -1,0 +1,181 @@
+:root {
+  --bg: #1e1f22;
+  --panel: #26282c;
+  --panel-2: #2d2f34;
+  --border: #3a3d42;
+  --text: #e8eaed;
+  --muted: #9aa0a6;
+  --accent: #4c8bf5;
+  --mark: #f5d24c;
+  color-scheme: dark light;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f5f6f8;
+    --panel: #ffffff;
+    --panel-2: #eef0f3;
+    --border: #d9dce1;
+    --text: #1a1c1e;
+    --muted: #5f6368;
+    --accent: #1a73e8;
+    --mark: #ffe680;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Toolbar ---------------------------------------------------------------- */
+.toolbar {
+  padding: 12px 14px 10px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.search-row {
+  display: flex;
+  gap: 8px;
+}
+
+.term {
+  flex: 1 1 auto;
+  padding: 9px 12px;
+  font-size: 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  outline: none;
+}
+.term:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.go {
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.go:active {
+  transform: translateY(1px);
+}
+
+.options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--muted);
+}
+.options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+.options .sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+.limit input {
+  width: 72px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+/* Results ---------------------------------------------------------------- */
+main {
+  flex: 1 1 auto;
+  overflow: auto;
+}
+
+.results {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 22px minmax(120px, 0.45fr) 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  cursor: default;
+}
+.row:hover {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.icon {
+  text-align: center;
+}
+.name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.name mark {
+  background: var(--mark);
+  color: #1a1c1e;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.dir {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl; /* keep the tail (deepest dir) visible when truncated */
+  text-align: left;
+}
+
+/* Status bar ------------------------------------------------------------- */
+.status {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

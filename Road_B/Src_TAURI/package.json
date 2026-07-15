@@ -1,0 +1,22 @@
+{
+  "name": "mac-hai-find-b-tauri",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Road_B (Tauri) 前端：TypeScript 搜索框 + 结果列表，经 invoke 调用 Rust 索引/搜索命令",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}

@@ -1,0 +1,5 @@
+# Runtime + packaging dependencies for MacFind Road_C (Python).
+# Authoritative build is GitHub Actions (macos-latest). See build-c-python.yml.
+PyQt6>=6.6
+numpy>=1.24
+pyinstaller>=6.0

@@ -1,0 +1,143 @@
+:root {
+  --bg: #1e1e22;
+  --bg2: #26262b;
+  --fg: #e8e8ea;
+  --muted: #9a9aa2;
+  --accent: #4c9aff;
+  --hit: #ffd66b;
+  --row: #2c2c32;
+  --row-alt: #292930;
+  --border: #3a3a42;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  overflow: hidden;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+
+.search {
+  flex: 1;
+  font-size: 15px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  outline: none;
+}
+.search:focus {
+  border-color: var(--accent);
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  user-select: none;
+}
+.filters label {
+  cursor: pointer;
+}
+
+.btn {
+  font-size: 13px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.status {
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+
+.results {
+  height: calc(100% - 118px);
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  cursor: default;
+}
+.row:nth-child(even) {
+  background: var(--row-alt);
+}
+.row:hover {
+  background: var(--row);
+}
+
+.kind {
+  color: var(--muted);
+  width: 14px;
+  flex: 0 0 auto;
+}
+.score {
+  color: var(--muted);
+  width: 44px;
+  flex: 0 0 auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.path {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl; /* keep the interesting tail (basename) visible */
+  text-align: left;
+}
+.path .m {
+  color: var(--hit);
+  font-weight: 600;
+}
+
+.foot {
+  height: 28px;
+  line-height: 28px;
+  padding: 0 14px;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+}
+
+.empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}

@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+*.idx
+.smoke.idx
+MacHaiFind-RoadB.app/
+DerivedData/
+.DS_Store

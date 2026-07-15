@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MacHaiFind-RoadB-Tauri",
+  "version": "0.1.0",
+  "identifier": "com.haifind.b-tauri",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "MacHaiFind · Road B (Tauri) — 索引 + fzf",
+        "width": 900,
+        "height": 640,
+        "minWidth": 560,
+        "minHeight": 400,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "category": "public.app-category.utilities",
+    "shortDescription": "macOS 极速文件搜索（索引 + fzf）",
+    "longDescription": "Road_B 路线：Rust 后端自建 mmap 二进制索引 + 并行 bitmask 预过滤 + fzf 模糊评分，TypeScript 前端渲染搜索框与结果列表。",
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
+}

@@ -1,0 +1,89 @@
+name: build-c-tauri
+
+# Road_C · Tauri (Rust backend + TS frontend) — macOS hybrid file-search GUI.
+# Primary engine: self-built mmap binary index (rayon bitmask pre-filter + fzf).
+# Fallback: live searchfs(2) via Rust FFI when the index is missing/corrupt.
+#
+# Authoritative build runs on GitHub Actions macos-latest (dev host is macOS 12
+# and does not build locally). Triggers only on changes to this implementation.
+
+on:
+  push:
+    paths:
+      - "Road_C/Src_TAURI/**"
+      - ".github/workflows/build-c-tauri.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: Road_C/Src_TAURI
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Show toolchain
+        run: |
+          rustc --version
+          cargo --version
+          node --version
+          npm --version
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            Road_C/Src_TAURI/src-tauri/target
+          key: ${{ runner.os }}-cargo-c-tauri-${{ hashFiles('Road_C/Src_TAURI/src-tauri/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-c-tauri-
+
+      - name: Install frontend deps
+        run: npm ci || npm install
+
+      - name: "Rust unit tests (engine: index + fzf)"
+        working-directory: Road_C/Src_TAURI/src-tauri
+        run: cargo test --release --lib
+
+      - name: CLI smoke test (hybrid engine self-check)
+        working-directory: Road_C/Src_TAURI/src-tauri
+        run: |
+          cargo build --release --bin mac-find-c-cli
+          # End-to-end index build + load + search, no display / no FDA needed.
+          ./target/release/mac-find-c-cli --check
+          ./target/release/mac-find-c-cli --status
+
+      - name: Build Tauri app (.app + .dmg)
+        run: npm run tauri build
+
+      - name: List build output
+        run: |
+          echo "--- bundle dir ---"
+          ls -la src-tauri/target/release/bundle || true
+          echo "--- .app bundles ---"
+          find src-tauri/target/release/bundle -maxdepth 3 -name "*.app" || true
+          echo "--- .dmg files ---"
+          find src-tauri/target/release/bundle -maxdepth 3 -name "*.dmg" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-c-tauri-app
+          path: |
+            Road_C/Src_TAURI/src-tauri/target/release/bundle/macos/**
+            Road_C/Src_TAURI/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14

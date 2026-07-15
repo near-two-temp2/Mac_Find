@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "macfind-c-python"
+version = "0.1.0"
+description = "MacFind Road_C (Python) — hybrid macOS file search: binary index primary + searchfs() fallback, PyQt6 GUI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "BSD-3-Clause" }
+authors = [{ name = "Mac_Find 18 implementation matrix — c-python" }]
+
+dependencies = [
+    "PyQt6>=6.6",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+
+[project.scripts]
+# Headless CLI (used by CI smoke tests and scripting).
+macfind-c = "macfind_c.cli:main"
+
+[project.gui-scripts]
+# GUI launcher.
+macfind-c-gui = "macfind_c.gui:main"
+
+[tool.setuptools]
+packages = ["macfind_c"]

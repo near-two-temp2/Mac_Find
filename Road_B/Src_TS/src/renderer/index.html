@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"
+    />
+    <title>MacFind B (TS)</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <input
+        id="q"
+        class="search"
+        type="text"
+        placeholder="Search files…  (index required)"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <div class="filters">
+        <label><input type="checkbox" id="filesOnly" /> files</label>
+        <label><input type="checkbox" id="dirsOnly" /> dirs</label>
+      </div>
+      <button id="rebuild" class="btn">Build index</button>
+    </header>
+
+    <div id="status" class="status">Checking index…</div>
+
+    <main class="results" id="results"></main>
+
+    <footer class="foot" id="foot"></footer>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>

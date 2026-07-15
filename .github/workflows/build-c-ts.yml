@@ -1,0 +1,67 @@
+name: build-c-ts
+
+on:
+  push:
+    paths:
+      - "Road_C/Src_TS/**"
+      - ".github/workflows/build-c-ts.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_C/Src_TS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build native addon (searchfs fallback)
+        run: npm run build:addon
+
+      - name: Compile TypeScript + copy assets
+        run: |
+          npm run build:ts
+          npm run build:assets
+
+      - name: CLI smoke test
+        run: |
+          echo "== help =="
+          node dist/cli/cli.js --help
+          echo "== status (no index yet; searchfs fallback) =="
+          node dist/cli/cli.js status || true
+          echo "== build a small index of the runner workspace =="
+          node dist/cli/cli.js index "$PWD" --max 20000 || true
+          echo "== search via index =="
+          node dist/cli/cli.js search dist --limit 10 || true
+          echo "== search a common name =="
+          node dist/cli/cli.js search package --limit 10 || true
+
+      - name: Package Electron .app / .dmg
+        run: npm run dist
+
+      - name: Verify artifacts
+        run: |
+          echo "== release dir =="
+          ls -la release/ || true
+          test -d "release/mac-arm64/MacFindRoadCTs.app" && echo "OK: .app produced" || \
+            (test -d release/mac && echo "OK: mac dir produced" || echo "WARN: no .app found")
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-c-ts-app
+          path: |
+            Road_C/Src_TS/release/**/*.app
+            Road_C/Src_TS/release/**/*.dmg
+          if-no-files-found: warn

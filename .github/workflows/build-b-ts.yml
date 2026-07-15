@@ -1,0 +1,51 @@
+name: build-b-ts
+
+on:
+  push:
+    paths:
+      - "Road_B/Src_TS/**"
+      - ".github/workflows/build-b-ts.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_B/Src_TS
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: Road_B/Src_TS/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile (tsc + copy assets)
+        run: npm run compile
+
+      - name: Smoke test (index + search over own sources)
+        run: npm run smoke
+
+      - name: Package macOS app (electron-builder)
+        run: npm run package
+
+      - name: List build output
+        if: always()
+        run: ls -laR release || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-b-ts-app
+          path: |
+            Road_B/Src_TS/release/*.dmg
+            Road_B/Src_TS/release/mac*/**
+          if-no-files-found: warn

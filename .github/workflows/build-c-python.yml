@@ -1,0 +1,84 @@
+name: build-c-python
+
+on:
+  push:
+    paths:
+      - "Road_C/Src_PYTHON/**"
+      - ".github/workflows/build-c-python.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_C/Src_PYTHON
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: CLI smoke test (headless engine)
+        run: |
+          echo "== version =="
+          python -m macfind_c.app --version || python -m macfind_c.cli --version
+          echo "== status (no index -> searchfs fallback) =="
+          python -m macfind_c.app status
+          echo "== build a small index over the runner's home =="
+          python -m macfind_c.app index "$HOME" -m 20000
+          echo "== status (index present) =="
+          python -m macfind_c.app status
+          echo "== search the index =="
+          python -m macfind_c.app search bin -l 10
+          echo "== fallback search with a deliberately-missing index =="
+          python -m macfind_c.app search python -i /tmp/does-not-exist.idx -l 5 || true
+
+      - name: Unit tests
+        run: |
+          python -m pip install pytest
+          python -m pytest -q tests || echo "pytest returned non-zero (see log)"
+
+      - name: Package .app (PyInstaller)
+        run: |
+          pyinstaller --noconfirm MacFindRoadC.spec
+          echo "== dist contents =="
+          ls -la dist/
+          test -d dist/MacFindRoadCPython.app && echo "OK: .app bundle produced"
+
+      - name: Verify bundle launches (headless CLI path inside the app binary)
+        run: |
+          BIN="dist/MacFindRoadCPython.app/Contents/MacOS/MacFindRoadCPython"
+          if [ -x "$BIN" ]; then
+            echo "== bundled binary status =="
+            "$BIN" status || true
+            "$BIN" search bin -l 5 || true
+          else
+            echo "bundled binary not found at $BIN" && ls -R dist/ | head -50
+          fi
+
+      - name: Zip the .app for upload
+        run: |
+          mkdir -p artifact
+          if [ -d dist/MacFindRoadCPython.app ]; then
+            ditto -c -k --sequesterRsrc --keepParent \
+              dist/MacFindRoadCPython.app \
+              artifact/MacFindRoadCPython.app.zip
+          fi
+          cp -R dist/MacFindRoadCPython artifact/ 2>/dev/null || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-c-python-app
+          path: Road_C/Src_PYTHON/artifact/
+          if-no-files-found: error

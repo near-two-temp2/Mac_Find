@@ -1,0 +1,52 @@
+[package]
+name = "mac-hai-find-c-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Road_C (Rust): macOS 极速文件搜索 GUI — 混合引擎（自建 mmap 二进制索引 + fzf 模糊评分，索引缺失/损坏时降级到 searchfs() 实时兜底）"
+license = "MIT"
+publish = false
+rust-version = "1.74"
+
+# ── 库：混合搜索引擎（索引 + fzf + searchfs 兜底），GUI/CLI 共用 ──
+[lib]
+name = "haifind_c"
+path = "src/lib.rs"
+
+# ── GUI：egui/eframe 桌面 app（搜索框 + 结果列表 + 在 Finder 中显示） ──
+[[bin]]
+name = "haifind-c-gui"
+path = "src/main.rs"
+
+# ── CLI：index / search / doctor 子命令，供脚本与 CI 冒烟测试 ──
+[[bin]]
+name = "haifind-c-cli"
+path = "src/cli.rs"
+
+[dependencies]
+# 混合引擎骨干：mmap 加载索引，rayon 并行 bitmask 预过滤。
+memmap2 = "0.9"
+rayon = "1.10"
+# 建索引时遍历文件系统（searchfs 不可用时的可移植兜底扫描）。
+walkdir = "2.5"
+# 定位 ~/Library/Caches 索引目录。
+dirs = "5"
+
+# searchfs()/fsgetpath() 只在 macOS 上存在；libc 提供 errno / FFI 基元。
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"
+
+# eframe 只在 macOS 拉入，避免把窗口栈拖进纯 CLI/其他平台的 check。
+# eframe 打包 egui + 原生窗口后端（glow）。
+[target.'cfg(target_os = "macos")'.dependencies.eframe]
+version = "0.29"
+default-features = false
+features = ["default_fonts", "glow"]
+
+[target.'cfg(target_os = "macos")'.dependencies.egui]
+version = "0.29"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true

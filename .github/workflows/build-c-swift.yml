@@ -1,0 +1,91 @@
+name: build-c-swift
+
+# Road_C / Swift — hybrid flagship (SwiftUI GUI + mmap index + searchfs fallback).
+# Authoritative build runs on GitHub Actions' macOS runner; the dev machine
+# (macOS 12) never compiles locally.
+
+on:
+  push:
+    paths:
+      - "Road_C/Src_SWIFT/**"
+      - ".github/workflows/build-c-swift.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_C/Src_SWIFT
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          swift --version
+          xcodebuild -version || true
+
+      # Build the pure-logic engine + GUI executable in release.
+      - name: swift build (release)
+        run: swift build -c release
+
+      # Headless unit tests of the engine (index build → mmap → fzf ordering).
+      - name: swift test
+        run: swift test
+
+      # Self-test subcommand + a real search against the runner's own volume.
+      - name: CLI smoke (self-test + live search)
+        run: |
+          BIN="$(swift build -c release --show-bin-path)/machaifind-c"
+          echo "Binary: $BIN"
+          "$BIN" --self-test
+          # Build a tiny index of the repo and query it end-to-end.
+          "$BIN" index --root "$PWD/Sources"
+          "$BIN" search swift --limit 5 || true
+          # Exercise the searchfs() fallback path directly.
+          "$BIN" search usr --dirs-only --limit 5 --fallback || true
+
+      # Assemble a runnable .app bundle around the SwiftPM executable. SwiftPM
+      # emits a bare Mach-O; we wrap it with an Info.plist so it launches as a
+      # GUI app (LSUIElement=false, regular activation).
+      - name: Package .app bundle
+        run: |
+          set -euxo pipefail
+          BIN="$(swift build -c release --show-bin-path)/machaifind-c"
+          APP="build/MacHaiFindC.app"
+          rm -rf "$APP"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp "$BIN" "$APP/Contents/MacOS/machaifind-c"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>            <string>MacHaiFindC</string>
+            <key>CFBundleDisplayName</key>     <string>Mac Hai Find — Road C</string>
+            <key>CFBundleIdentifier</key>      <string>com.machaifind.c</string>
+            <key>CFBundleVersion</key>         <string>1.0</string>
+            <key>CFBundleShortVersionString</key><string>1.0</string>
+            <key>CFBundlePackageType</key>     <string>APPL</string>
+            <key>CFBundleExecutable</key>      <string>machaifind-c</string>
+            <key>LSMinimumSystemVersion</key>  <string>13.0</string>
+            <key>NSHighResolutionCapable</key> <true/>
+            <key>LSUIElement</key>             <false/>
+          </dict>
+          </plist>
+          PLIST
+          # Ad-hoc sign so it launches without a Developer ID (CI artifact only).
+          codesign --force --deep --sign - "$APP" || true
+          echo "Bundle assembled:"
+          find "$APP" -type f
+
+      - name: Upload .app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-c-swift-app
+          path: Road_C/Src_SWIFT/build/MacHaiFindC.app
+          if-no-files-found: error

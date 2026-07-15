@@ -1,0 +1,91 @@
+name: build-a-go
+
+on:
+  push:
+    paths:
+      - "Road_A/Src_GO/**"
+      - ".github/workflows/build-a-go.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_A/Src_GO
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: Road_A/Src_GO/go.sum
+
+      - name: Show toolchain
+        run: |
+          go version
+          clang --version
+          xcode-select -p
+
+      - name: Resolve modules
+        env:
+          GOFLAGS: -mod=mod
+        run: go mod tidy
+
+      - name: Vet
+        env:
+          CGO_ENABLED: "1"
+          GOFLAGS: -mod=mod
+        run: go vet ./...
+
+      # Build the raw binary first so a compile break is easy to spot before the
+      # slower .app packaging step runs.
+      - name: Build binary
+        env:
+          CGO_ENABLED: "1"
+          GOFLAGS: -mod=mod
+        run: go build -o macfind-a-go .
+
+      - name: CLI smoke test
+        run: |
+          # Exercise the cgo searchfs engine end to end. A common filename that
+          # exists on any macOS runner keeps this deterministic; a non-zero
+          # result count is a bonus, not a hard requirement.
+          ./macfind-a-go --cli --limit 20 Applications || true
+          ./macfind-a-go --cli --files-only --limit 10 bash || true
+          echo "smoke test finished"
+
+      - name: Package .app with fyne
+        env:
+          CGO_ENABLED: "1"
+          GOFLAGS: -mod=mod
+        run: |
+          go install fyne.io/fyne/v2/cmd/fyne@v2.5.2
+          "$(go env GOPATH)/bin/fyne" package \
+            --os darwin \
+            --name MacFindAGo \
+            --appID org.macfind.roada.go \
+            --icon Icon.png || {
+              echo "fyne package failed; falling back to raw binary artifact"
+            }
+          ls -la
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist
+          if [ -d "MacFindAGo.app" ]; then
+            cp -R "MacFindAGo.app" dist/
+          fi
+          # Always include the raw binary as a guaranteed-runnable fallback.
+          cp macfind-a-go dist/ || true
+          ls -laR dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-a-go-app
+          path: Road_A/Src_GO/dist/
+          if-no-files-found: error

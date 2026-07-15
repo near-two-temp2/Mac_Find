@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MacFind — Road C (Hybrid)</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="search-wrap">
+          <input
+            id="query"
+            type="search"
+            placeholder="Search files & folders…"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+        </div>
+        <div class="options">
+          <label><input type="checkbox" id="opt-files" /> Files only</label>
+          <label><input type="checkbox" id="opt-dirs" /> Dirs only</label>
+          <label><input type="checkbox" id="opt-live" /> Live (searchfs)</label>
+          <button id="rebuild" title="Build / rebuild the on-disk index">Build index</button>
+        </div>
+      </header>
+
+      <section id="status" class="status">Loading engine…</section>
+
+      <main id="results" class="results" tabindex="0">
+        <div class="empty">Type to search.</div>
+      </main>
+
+      <footer id="footer" class="footer"></footer>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,87 @@
+name: build-b-tauri
+
+# Road_B · Tauri (Rust 后端 + TypeScript 前端)
+# 自建 mmap 二进制索引 + 并行 bitmask 预过滤 + fzf 评分的 macOS GUI 桌面 app。
+# 权威构建在 GitHub Actions macos-latest（开发机为 macOS 12，不本地编译）。
+# 仅在本实现目录变更时触发。
+
+on:
+  push:
+    paths:
+      - "Road_B/Src_TAURI/**"
+      - ".github/workflows/build-b-tauri.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_B/Src_TAURI
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Show toolchain
+        run: |
+          rustc --version
+          cargo --version
+          node --version
+          npm --version
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            Road_B/Src_TAURI/src-tauri/target
+          key: ${{ runner.os }}-cargo-b-tauri-${{ hashFiles('Road_B/Src_TAURI/src-tauri/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-b-tauri-
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Rust unit tests (engine)
+        working-directory: Road_B/Src_TAURI/src-tauri
+        run: cargo test --release --lib
+
+      - name: CLI smoke test (engine self-test)
+        working-directory: Road_B/Src_TAURI/src-tauri
+        run: |
+          cargo build --release --bin haifind-tauri-search
+          # 用合成数据自检引擎（不依赖 Full Disk Access），CI 必过。
+          ./target/release/haifind-tauri-search --self-test
+          # 再做一次真实的小规模索引 + 搜索（限量，避免全盘遍历）。
+          ./target/release/haifind-tauri-search rs --root "$HOME" --max 20000 --limit 10 || true
+
+      - name: Build Tauri app (.app + .dmg)
+        run: npm run tauri build
+
+      - name: List build output
+        run: |
+          echo "--- bundle/macos ---"
+          ls -la src-tauri/target/release/bundle/macos || true
+          echo "--- bundle/dmg ---"
+          ls -la src-tauri/target/release/bundle/dmg || true
+          find src-tauri/target/release/bundle -maxdepth 2 -name "*.app" -o -name "*.dmg" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-b-tauri-app
+          path: |
+            Road_B/Src_TAURI/src-tauri/target/release/bundle/macos/**
+            Road_B/Src_TAURI/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14

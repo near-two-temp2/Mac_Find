@@ -1,0 +1,72 @@
+name: build-c-cpp
+
+on:
+  push:
+    paths:
+      - "Road_C/Src_CPP/**"
+      - ".github/workflows/build-c-cpp.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: Road_C/Src_CPP
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt6 (Homebrew)
+        run: |
+          brew update
+          brew install qt@6 cmake
+
+      - name: Configure (CMake)
+        run: |
+          QT_PREFIX="$(brew --prefix qt@6)"
+          echo "Using Qt6 prefix: ${QT_PREFIX}"
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="${QT_PREFIX}"
+
+      - name: Build
+        run: cmake --build build --config Release -j 3
+
+      - name: Verify artifacts (hybrid smoke test)
+        run: |
+          echo "== CLI help =="
+          ./build/macfind-c-cli --help || true
+
+          echo "== Before any index: search should fall back to searchfs =="
+          # No index built yet -> the coordinator uses the searchfs() fallback.
+          ./build/macfind-c-cli info || true
+          ./build/macfind-c-cli search -m 5 bin || true
+
+          echo "== Build a small index over a bounded root =="
+          # Index just the runner's HOME (fast) so the index path is exercised.
+          ./build/macfind-c-cli index "$HOME" || true
+          ./build/macfind-c-cli info || true
+
+          echo "== After index: search should use the index engine =="
+          ./build/macfind-c-cli search -m 10 lib || true
+
+          echo "== GUI bundle =="
+          ls -la build/
+          test -d build/MacFindRoadCCpp.app && echo "OK: .app bundle produced"
+
+      - name: Package .app
+        run: |
+          mkdir -p dist
+          if [ -d build/MacFindRoadCCpp.app ]; then
+            cp -R build/MacFindRoadCCpp.app dist/
+          fi
+          cp build/macfind-c-cli dist/ || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: road-c-cpp-app
+          path: Road_C/Src_CPP/dist/
+          if-no-files-found: error

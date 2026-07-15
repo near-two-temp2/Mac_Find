@@ -1,0 +1,50 @@
+{
+  "name": "mac-find-b-ts",
+  "productName": "MacFind B (TS)",
+  "version": "0.1.0",
+  "description": "Road_B TypeScript/Electron macOS file search: self-built binary index + bitmask prefilter + fzf scoring.",
+  "author": "Mac_Find 18 Matrix (Road_B / Src_TS)",
+  "license": "MIT",
+  "private": true,
+  "main": "dist/main/main.js",
+  "scripts": {
+    "clean": "rimraf dist release",
+    "compile": "tsc -p tsconfig.json && node scripts/copy-assets.js",
+    "build": "npm run compile && npm run package",
+    "package": "electron-builder --mac --publish never",
+    "start": "npm run compile && electron .",
+    "index": "npm run compile && node dist/cli/cli.js index",
+    "search": "npm run compile && node dist/cli/cli.js search",
+    "smoke": "npm run compile && node dist/cli/cli.js smoke"
+  },
+  "build": {
+    "appId": "com.machaifind.roadb.ts",
+    "productName": "MacFind-B-TS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dir",
+        "dmg"
+      ],
+      "category": "public.app-category.utilities",
+      "identity": null
+    },
+    "dmg": {
+      "writeUpdateInfo": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "rimraf": "^5.0.10",
+    "typescript": "^5.5.4",
+    "@types/node": "^20.14.15"
+  }
+}
