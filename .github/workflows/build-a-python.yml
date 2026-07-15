@@ -1,7 +1,14 @@
 name: build-a-python
 
 # Road_A · Python — PyQt6 GUI + pure-ctypes searchfs() engine (no index).
-# Authoritative build: macos-latest runner packages a .app via PyInstaller.
+# Authoritative build: packages a .app via PyInstaller.
+#
+# Intel (x86_64) build: runs on the native Intel runner `macos-15-intel`
+# (GitHub's last x86_64 macOS image, supported until Aug 2027). On a native
+# Intel host, setup-python installs an x86_64 CPython, pip pulls the x86_64
+# PyQt6-Qt6 wheel (PyQt6/sip are universal2), and PyInstaller emits an
+# x86_64 .app with no Rosetta/`arch` tricks. This produces a bundle that
+# opens on Intel Macs. (macos-latest is arm64 and would yield an arm64 .app.)
 
 on:
   push:
@@ -16,7 +23,7 @@ defaults:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,6 +32,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Verify toolchain is x86_64
+        run: |
+          echo "uname -m: $(uname -m)"
+          python -c "import platform; print('python arch:', platform.machine())"
+          # Fail early if we somehow landed on an arm64 host/interpreter.
+          test "$(python -c 'import platform;print(platform.machine())')" = "x86_64"
 
       - name: Install dependencies
         run: |
@@ -53,6 +67,15 @@ jobs:
         run: |
           test -d dist/MacFindA.app || (echo "MacFindA.app not built" && exit 1)
           ls -la dist/
+
+      - name: Verify bundle is x86_64
+        run: |
+          BIN="dist/MacFindA.app/Contents/MacOS/MacFindA"
+          file "$BIN"
+          ARCHS="$(lipo -archs "$BIN")"
+          echo "archs: $ARCHS"
+          echo "$ARCHS" | grep -q x86_64 || (echo "bundle is not x86_64" && exit 1)
+          echo "$ARCHS" | grep -q arm64 && echo "note: bundle is universal2 (also runs on Intel)" || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

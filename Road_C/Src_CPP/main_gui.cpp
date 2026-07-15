@@ -145,7 +145,7 @@ public:
         root->addWidget(results_, 1);
 
         setCentralWidget(central);
-        setWindowTitle("Mac_Find — Road C (hybrid, C++)");
+        setWindowTitle("MacFind · Qt/C++ · Road_C");
         resize(760, 560);
         updateStatus();
 

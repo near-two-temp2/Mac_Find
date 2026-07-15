@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Mac Find — Road A (searchfs, no index)")
+        self.setWindowTitle("MacFind · Python/PyQt6 · Road_A")
         self.resize(820, 560)
 
         self._worker: SearchWorker | None = None

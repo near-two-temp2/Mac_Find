@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "MacHaiFind · Road B (Tauri) — 索引 + fzf",
+        "title": "MacFind · Tauri/TS · Road_B",
         "width": 900,
         "height": 640,
         "minWidth": 560,

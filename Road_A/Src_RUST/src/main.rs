@@ -27,7 +27,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([760.0, 560.0])
             .with_min_inner_size([420.0, 320.0])
-            .with_title("Mac Find — Road A (searchfs, no index)"),
+            .with_title("MacFind · Rust/egui · Road_A"),
         ..Default::default()
     };
 

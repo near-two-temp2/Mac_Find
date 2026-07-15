@@ -42,7 +42,7 @@ func (g *guiState) set(ix *index.Index) {
 // keystroke against the in-memory index.
 func runGUI() {
 	a := app.NewWithID("com.macfind.roadb.go")
-	w := a.NewWindow("macfind — Road B (index + fzf)")
+	w := a.NewWindow("MacFind · Go/Fyne · Road_B")
 	w.Resize(fyne.NewSize(760, 520))
 
 	state := &guiState{}

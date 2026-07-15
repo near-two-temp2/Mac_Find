@@ -36,7 +36,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        win.title = "MacHaiFind · Road B (Index + fzf)"
+        win.title = "MacFind · Swift · Road_B"
         win.center()
         win.contentView = hosting
         win.makeKeyAndOrderFront(nil)

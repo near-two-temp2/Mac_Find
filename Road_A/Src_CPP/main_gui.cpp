@@ -110,7 +110,7 @@ public:
         root->addWidget(results_, 1);
 
         setCentralWidget(central);
-        setWindowTitle("Mac_Find — Road A (searchfs, C++)");
+        setWindowTitle("MacFind · Qt/C++ · Road_A");
         resize(720, 520);
         statusBar()->showMessage("Type to search. Powered by searchfs().");
 

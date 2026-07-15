@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "MacFind — Road C (Hybrid)",
+        "title": "MacFind · Tauri/TS · Road_C",
         "width": 900,
         "height": 640,
         "minWidth": 560,

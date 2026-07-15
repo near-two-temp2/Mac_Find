@@ -29,7 +29,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([880.0, 600.0])
             .with_min_inner_size([560.0, 360.0])
-            .with_title("Mac Hai Find — Road_B (Rust · 索引 + fzf)"),
+            .with_title("MacFind · Rust/egui · Road_B"),
         ..Default::default()
     };
     eframe::run_native(

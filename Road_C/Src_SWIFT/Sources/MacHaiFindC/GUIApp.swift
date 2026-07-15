@@ -54,7 +54,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Mac Hai Find — Road_C (Hybrid)"
+        window.title = "MacFind · Swift · Road_C"
         window.titlebarAppearsTransparent = true
         window.center()
         window.setFrameAutosaveName("MacHaiFindCMainWindow")

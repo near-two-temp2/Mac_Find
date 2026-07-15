@@ -29,7 +29,7 @@ function createWindow(): void {
     height: 640,
     minWidth: 560,
     minHeight: 400,
-    title: 'MacFind — Road C (TS hybrid)',
+    title: 'MacFind · Electron/TS · Road_C',
     titleBarStyle: 'hiddenInset',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

@@ -82,7 +82,7 @@ public:
         root->addWidget(results_, 1);
 
         setCentralWidget(central);
-        setWindowTitle("Mac_Find — Road_B (C++ / index + fzf)");
+        setWindowTitle("MacFind · Qt/C++ · Road_B");
         resize(760, 560);
 
         connect(search_, &QLineEdit::textChanged, this, &MainWindow::runSearch);

@@ -37,6 +37,10 @@ jobs:
           go mod tidy
           go mod download
 
+      # Vet and tests run on the host arch (arm64) so they execute natively
+      # rather than under Rosetta; they validate portable index/search logic,
+      # not the target arch. Only the shipped artifacts are cross-built to
+      # x86_64 (see the "Build binary (x86_64)" and package steps below).
       - name: Vet
         env:
           CGO_ENABLED: "1"
@@ -47,13 +51,24 @@ jobs:
           CGO_ENABLED: "1"
         run: go test ./internal/...
 
-      # Plain binary build — proves the whole program (GUI + CLI) compiles.
-      - name: Build binary
+      # Plain binary build — proves the whole program (GUI + CLI) compiles, and
+      # cross-compiles it to Intel (x86_64). macos-latest is an arm64 runner, so
+      # a default build produces an arm64 binary that won't launch on Intel
+      # Macs. The macOS SDK/clang is universal, so `clang -arch x86_64` plus
+      # matching CGO flags emit x86_64 from the arm64 host. The x86_64 binary
+      # still runs here via the runner's preinstalled Rosetta 2.
+      - name: Build binary (x86_64)
         env:
           CGO_ENABLED: "1"
+          GOARCH: amd64
+          CGO_CFLAGS: "-arch x86_64"
+          CGO_LDFLAGS: "-arch x86_64"
+          CC: "clang -arch x86_64"
         run: |
           mkdir -p dist
           go build -o dist/macfind ./cmd/macfind
+          file dist/macfind
+          file dist/macfind | grep -q x86_64
           ./dist/macfind --help || true
 
       # CLI smoke test: build a small index over the repo and query it. This
@@ -75,13 +90,23 @@ jobs:
       # single-dash and double-dash icon flag. If fyne packaging fails for any
       # reason, the next step assembles a .app by hand from the built binary,
       # so the artifact always contains a runnable bundle.
+      # Install the fyne tool as a host-native (arm64) binary so it runs without
+      # Rosetta — do NOT inherit the cross env here.
       - name: Install fyne CLI
+        env:
+          CGO_ENABLED: "0"
         run: go install fyne.io/tools/cmd/fyne@latest
 
+      # `fyne package` runs its own `go build`; the cross-compile env below makes
+      # the executable inside the .app x86_64 too.
       - name: Package .app bundle (fyne)
         continue-on-error: true
         env:
           CGO_ENABLED: "1"
+          GOARCH: amd64
+          CGO_CFLAGS: "-arch x86_64"
+          CGO_LDFLAGS: "-arch x86_64"
+          CC: "clang -arch x86_64"
         run: |
           FYNE="$(go env GOPATH)/bin/fyne"
           cp Icon.png cmd/macfind/Icon.png
@@ -127,6 +152,9 @@ jobs:
             echo "APPL????" > "$APP/Contents/PkgInfo"
           fi
           ls -la dist/macfind.app/Contents
+          # Confirm the shipped bundle executable is Intel (x86_64).
+          file dist/macfind.app/Contents/MacOS/* || true
+          file dist/macfind.app/Contents/MacOS/macfind | grep -q x86_64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

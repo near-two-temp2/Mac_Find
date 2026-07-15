@@ -35,17 +35,39 @@ jobs:
       - name: Unit tests (bitmask / fuzzy / index)
         run: go test ./internal/...
 
-      - name: CLI smoke test (hybrid engine, no GUI)
+      # Cross-compile the shipped CLI to Intel (x86_64). macos-latest is an
+      # arm64 runner, so a default build produces an arm64 binary that won't
+      # launch on Intel Macs. clang/SDK are universal, so `clang -arch x86_64`
+      # plus matching CGO flags emit x86_64 from the arm64 host; the result runs
+      # here via the runner's preinstalled Rosetta 2.
+      - name: CLI smoke test (hybrid engine, no GUI) — x86_64
+        env:
+          GOARCH: amd64
+          CGO_CFLAGS: "-arch x86_64"
+          CGO_LDFLAGS: "-arch x86_64"
+          CC: "clang -arch x86_64"
         run: |
           go build -o macfind-cli ./cmd/macfind
+          file macfind-cli
+          file macfind-cli | grep -q x86_64
           ./macfind-cli selftest
 
+      # Install the fyne tool as a host-native (arm64) binary — no cross env.
       - name: Install Fyne packaging tool
+        env:
+          CGO_ENABLED: "0"
         run: go install fyne.io/fyne/v2/cmd/fyne@v2.6.3
 
-      - name: Package .app (Fyne GUI)
+      - name: Package .app (Fyne GUI) — x86_64
         # v2.6.x flag names: -appID (camelCase), -sourceDir (not -app-id / -src).
         # fyne package requires an icon; Icon.png ships in cmd/macfind.
+        # `fyne package` runs its own `go build`; the cross env makes the
+        # executable inside the .app x86_64 too.
+        env:
+          GOARCH: amd64
+          CGO_CFLAGS: "-arch x86_64"
+          CGO_LDFLAGS: "-arch x86_64"
+          CC: "clang -arch x86_64"
         run: |
           "$(go env GOPATH)/bin/fyne" package \
             -os darwin \
@@ -62,6 +84,9 @@ jobs:
           find . -maxdepth 2 -name "*.app" -exec cp -R {} dist/ \;
           cp macfind-cli dist/ || true
           ls -la dist
+          # 确认产物是 Intel(x86_64)
+          find dist -name "*.app" -exec sh -c 'file "$1"/Contents/MacOS/*' _ {} \; || true
+          file dist/macfind-cli || true
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

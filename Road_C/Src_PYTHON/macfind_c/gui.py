@@ -121,7 +121,7 @@ class MainWindow(QMainWindow):
         # Retired-but-still-running search workers, kept alive until they finish.
         self._retired: list[SearchWorker] = []
 
-        self.setWindowTitle("MacFind — Road C (hybrid: index + searchfs)")
+        self.setWindowTitle("MacFind · Python/PyQt6 · Road_C")
         self.resize(820, 560)
 
         central = QWidget()

@@ -35,7 +35,7 @@ type guiState struct {
 // and the user can trigger a background "Build Index" from the toolbar.
 func runGUI() {
 	a := app.NewWithID("com.macfind.roadc.go")
-	w := a.NewWindow("Mac Find — Road C (Go · hybrid)")
+	w := a.NewWindow("MacFind · Go/Fyne · Road_C")
 	w.Resize(fyne.NewSize(820, 560))
 
 	st := &guiState{

@@ -55,7 +55,7 @@ mod app {
         let options = eframe::NativeOptions {
             viewport: eframe::egui::ViewportBuilder::default()
                 .with_inner_size([900.0, 620.0])
-                .with_title("Mac Hai Find — Road_C (Rust 混合引擎)"),
+                .with_title("MacFind · Rust/egui · Road_C"),
             ..Default::default()
         };
         eframe::run_native(

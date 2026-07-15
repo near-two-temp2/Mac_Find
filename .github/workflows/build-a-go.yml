@@ -14,6 +14,17 @@ jobs:
       run:
         working-directory: Road_A/Src_GO
 
+    # Cross-compile the cgo binary to Intel (x86_64). The macos-latest runner is
+    # arm64, so a default build produces an arm64 binary that won't launch on
+    # Intel Macs. The macOS SDK/clang is universal, so `clang -arch x86_64` and
+    # matching CGO flags let us emit x86_64 from the arm64 host.
+    env:
+      CGO_ENABLED: "1"
+      GOARCH: amd64
+      CGO_CFLAGS: "-arch x86_64"
+      CGO_LDFLAGS: "-arch x86_64"
+      CC: "clang -arch x86_64"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -49,21 +60,34 @@ jobs:
           GOFLAGS: -mod=mod
         run: go build -o macfind-a-go .
 
+      - name: Verify binary is x86_64
+        run: |
+          file macfind-a-go
+          lipo -info macfind-a-go || true
+          file macfind-a-go | grep -q x86_64
+
       - name: CLI smoke test
         run: |
-          # Exercise the cgo searchfs engine end to end. A common filename that
-          # exists on any macOS runner keeps this deterministic; a non-zero
-          # result count is a bonus, not a hard requirement.
+          # Exercise the cgo searchfs engine end to end. The binary is x86_64 and
+          # this runner is arm64; Rosetta 2 is preinstalled on the GitHub macOS
+          # runner, so the binary still runs. Guarded with `|| true` regardless.
+          # A common filename that exists on any macOS runner keeps this
+          # deterministic; a non-zero result count is a bonus, not a hard
+          # requirement.
           ./macfind-a-go --cli --limit 20 Applications || true
           ./macfind-a-go --cli --files-only --limit 10 bash || true
           echo "smoke test finished"
 
       - name: Package .app with fyne
         env:
-          CGO_ENABLED: "1"
           GOFLAGS: -mod=mod
         run: |
-          go install fyne.io/fyne/v2/cmd/fyne@v2.5.2
+          # `fyne package` runs its own `go build`, which inherits the job-level
+          # cross-compile env (GOARCH=amd64, CC="clang -arch x86_64", CGO_*FLAGS),
+          # so the executable inside the .app is x86_64 too. Install the `fyne`
+          # tool itself as a host-native (arm64) binary so it runs without
+          # Rosetta — override GOARCH just for this install.
+          GOARCH="$(go env GOHOSTARCH)" CGO_ENABLED=0 go install fyne.io/fyne/v2/cmd/fyne@v2.5.2
           "$(go env GOPATH)/bin/fyne" package \
             --os darwin \
             --name MacFindAGo \
@@ -72,6 +96,9 @@ jobs:
               echo "fyne package failed; falling back to raw binary artifact"
             }
           ls -la
+          if [ -d "MacFindAGo.app" ]; then
+            file MacFindAGo.app/Contents/MacOS/* || true
+          fi
 
       - name: Stage artifact
         run: |

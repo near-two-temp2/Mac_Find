@@ -61,7 +61,7 @@ class IndexWorker(QThread):
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Mac_Find B (Python) — index + fzf")
+        self.setWindowTitle("MacFind · Python/PyQt6 · Road_B")
         self.resize(820, 560)
 
         self._index: Optional[engine.Index] = None

@@ -1,5 +1,13 @@
 name: build-c-python
 
+# Road_C · Python — PyQt6 GUI + hybrid engine (index-first, searchfs fallback).
+#
+# Intel (x86_64) build: runs on the native Intel runner `macos-15-intel`
+# (GitHub's last x86_64 macOS image, supported until Aug 2027). A native
+# Intel host makes setup-python install x86_64 CPython, pip pull x86_64
+# PyQt6-Qt6 + numpy wheels, and PyInstaller emit an x86_64 .app that opens
+# on Intel Macs. (macos-latest is arm64 and would yield an arm64 .app.)
+
 on:
   push:
     paths:
@@ -9,7 +17,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15-intel
     defaults:
       run:
         working-directory: Road_C/Src_PYTHON
@@ -22,6 +30,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Verify toolchain is x86_64
+        run: |
+          echo "uname -m: $(uname -m)"
+          python -c "import platform; print('python arch:', platform.machine())"
+          test "$(python -c 'import platform;print(platform.machine())')" = "x86_64"
 
       - name: Install dependencies
         run: |
@@ -59,6 +73,11 @@ jobs:
         run: |
           BIN="dist/MacFindRoadCPython.app/Contents/MacOS/MacFindRoadCPython"
           if [ -x "$BIN" ]; then
+            echo "== bundled binary arch =="
+            file "$BIN"
+            ARCHS="$(lipo -archs "$BIN")"
+            echo "archs: $ARCHS"
+            echo "$ARCHS" | grep -q x86_64 || (echo "bundle is not x86_64" && exit 1)
             echo "== bundled binary status =="
             "$BIN" status || true
             "$BIN" search bin -l 5 || true

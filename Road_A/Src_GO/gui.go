@@ -20,7 +20,7 @@ import (
 // and a status line at the bottom.
 func runGUI() {
 	a := app.New()
-	w := a.NewWindow("Mac_Find · Road A (searchfs) · Go")
+	w := a.NewWindow("MacFind · Go/Fyne · Road_A")
 	w.Resize(fyne.NewSize(760, 560))
 
 	// --- widgets -----------------------------------------------------------
