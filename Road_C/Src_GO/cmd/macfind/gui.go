@@ -13,6 +13,7 @@ import (
 
 	"macfind/roadc/internal/engine"
 	"macfind/roadc/internal/index"
+	cjktheme "macfind/roadc/internal/theme"
 )
 
 // guiState holds the widgets and current result set shared between the search
@@ -28,6 +29,7 @@ type guiState struct {
 	results  []engine.Result
 	selected int
 	seq      uint64 // debounce/staleness guard for async searches
+	building bool   // true while an index build is in flight (auto or manual)
 }
 
 // runGUI builds and shows the main window. The hybrid engine loads whatever
@@ -35,6 +37,9 @@ type guiState struct {
 // and the user can trigger a background "Build Index" from the toolbar.
 func runGUI() {
 	a := app.NewWithID("com.macfind.roadc.go")
+	// Use a CJK-capable font so Chinese UI text and Chinese file paths render as
+	// glyphs instead of tofu (□) boxes.
+	a.Settings().SetTheme(cjktheme.New())
 	w := a.NewWindow("MacFind · Go/Fyne · Road_C")
 	w.Resize(fyne.NewSize(820, 560))
 
@@ -45,7 +50,7 @@ func runGUI() {
 	}
 
 	st.entry = widget.NewEntry()
-	st.entry.SetPlaceHolder("Type to search files… (index-first, searchfs fallback)")
+	st.entry.SetPlaceHolder("输入以搜索文件… / Type to search (index-first, searchfs fallback)")
 
 	st.status = widget.NewLabel("")
 	st.updateStatusIdle()
@@ -64,9 +69,12 @@ func runGUI() {
 				return
 			}
 			r := st.results[id]
-			prefix := "📄 "
+			// Use text markers rather than emoji: the embedded CJK font has no
+			// emoji glyphs, and the custom theme routes every text style through
+			// it, so 📄/📁 would render as tofu boxes.
+			prefix := "[文件] "
 			if r.IsDir {
-				prefix = "📁 "
+				prefix = "[目录] "
 			}
 			o.(*widget.Label).SetText(prefix + r.Path)
 		},
@@ -81,8 +89,8 @@ func runGUI() {
 	st.entry.OnChanged = func(q string) { st.search(q) }
 	st.entry.OnSubmitted = func(q string) { st.search(q) }
 
-	showBtn := widget.NewButton("Show in Finder", st.showSelectedInFinder)
-	buildBtn := widget.NewButton("Build / Rebuild Index", st.buildIndexAsync)
+	showBtn := widget.NewButton("在访达中显示 / Show in Finder", st.showSelectedInFinder)
+	buildBtn := widget.NewButton("建立 / 重建索引 / Rebuild Index", st.buildIndexAsync)
 
 	toolbar := container.NewHBox(showBtn, buildBtn)
 	top := container.NewVBox(st.entry, toolbar, st.status)
@@ -90,6 +98,14 @@ func runGUI() {
 	w.SetContent(content)
 
 	w.Canvas().Focus(st.entry)
+
+	// First-launch UX: if no index exists yet, build one automatically in the
+	// background instead of leaving the user on the slow searchfs() path (a full
+	// live scan is ~86s per query). The build itself avoids network volumes.
+	if !st.eng.HasIndex() {
+		st.buildIndexAsync()
+	}
+
 	w.ShowAndRun()
 }
 
@@ -141,10 +157,10 @@ func (st *guiState) search(query string) {
 
 func (st *guiState) updateStatusIdle() {
 	if st.eng.HasIndex() {
-		st.status.SetText(fmt.Sprintf("Ready · index loaded (%d entries) · fuzzy search",
+		st.status.SetText(fmt.Sprintf("就绪 / Ready · index loaded (%d entries) · fuzzy search",
 			st.eng.IndexCount()))
 	} else {
-		st.status.SetText("Ready · no index · using live searchfs() fallback (build an index for fuzzy search)")
+		st.status.SetText("就绪 / Ready · no index · using live searchfs() fallback (building one…)")
 	}
 }
 
@@ -169,28 +185,48 @@ func (st *guiState) showSelectedInFinder() {
 }
 
 // buildIndexAsync rebuilds the binary index over the default roots on a
-// background goroutine, then reloads it into the engine. The button disables
-// itself while running.
+// background goroutine, then reloads it into the engine. It is safe to call from
+// either the toolbar button (first launch also triggers it automatically) and
+// is a no-op if a build is already in flight, so the auto-build and a manual tap
+// can't collide. The scan skips all network / FUSE volumes (see index.Build).
 func (st *guiState) buildIndexAsync() {
-	// Called from the button tap on the UI goroutine — safe to set directly.
-	st.status.SetText("Building index… (scanning filesystem, this may take a while)")
+	st.mu.Lock()
+	if st.building {
+		st.mu.Unlock()
+		return
+	}
+	st.building = true
+	st.mu.Unlock()
+
+	// status.SetText is a UI-thread operation; wrap it in fyne.Do since this
+	// method is also invoked from the pre-ShowAndRun auto-build path.
+	fyne.Do(func() {
+		st.status.SetText("正在建立索引… / Building index (skipping network volumes)…")
+	})
 	go func() {
 		roots := index.DefaultRoots()
 		out := index.DefaultPath()
 		start := time.Now()
 		n, err := index.Build(roots, out)
-		if err != nil {
-			fyne.Do(func() { st.status.SetText("Index build failed: " + err.Error()) })
-			return
+		reloadErr := error(nil)
+		if err == nil {
+			reloadErr = st.eng.Reload(out)
 		}
-		reloadErr := st.eng.Reload(out)
+
+		st.mu.Lock()
+		st.building = false
+		st.mu.Unlock()
+
 		fyne.Do(func() {
-			if reloadErr != nil {
-				st.status.SetText("Built index but reload failed: " + reloadErr.Error())
-				return
+			switch {
+			case err != nil:
+				st.status.SetText("索引建立失败 / Index build failed: " + err.Error())
+			case reloadErr != nil:
+				st.status.SetText("已建立索引但重载失败 / Built index but reload failed: " + reloadErr.Error())
+			default:
+				st.status.SetText(fmt.Sprintf("索引就绪 / Index ready · %d entries · %s",
+					n, time.Since(start).Round(time.Millisecond)))
 			}
-			st.status.SetText(fmt.Sprintf("Index ready · %d entries · %s",
-				n, time.Since(start).Round(time.Millisecond)))
 		})
 	}()
 }

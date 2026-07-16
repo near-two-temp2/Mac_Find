@@ -30,8 +30,8 @@ static int go_getmounts(char *out, int outcap) {
         char local = (mnts[i].f_flags & MNT_LOCAL) ? '1' : '0';
         const char *fst = mnts[i].f_fstypename;
         const char *mp  = mnts[i].f_mntonname;
-        int need = 1 /*local*/ + 1 /*tab*/ + (int)strlen(fst) + 1 /*tab*/
-                 + (int)strlen(mp) + 1 /*newline*/;
+        // record = local(1) + tab(1) + fstype + tab(1) + mountpoint + newline(1)
+        int need = 4 + (int)strlen(fst) + (int)strlen(mp);
         if (written + need >= outcap) return -1;
         out[written++] = local;
         out[written++] = '\t';
