@@ -173,18 +173,30 @@ class HybridEngine:
                 scored.append(Result(path, 0, bool(flags[i] & index.FLAG_IS_DIR)))
             return scored, total_candidates
 
-        score = fuzzy.score  # local binding — hot loop
+        rank = fuzzy.rank_score  # local binding — hot loop
+        # Keep the basename length alongside each hit so ties can be broken by
+        # "more specific" (shorter) paths, matching the c-tauri standard.
+        scored_rows: List[tuple[int, int, Result]] = []
         for i in candidate_idx:
             i = int(i)
             s = int(offsets[i])
             e = s + int(lengths[i])
             text = blob[s:e]
-            hit = score(q_bytes, text)
+            # Basename offset: byte after the last '/'; 0 when the path has none.
+            slash = text.rfind(b"/")
+            bn_start = slash + 1 if slash >= 0 else 0
+            hit = rank(q_bytes, text, bn_start)
             if hit is not None:
                 path = text.decode("utf-8", "replace")
-                scored.append(
-                    Result(path, hit[0], bool(flags[i] & index.FLAG_IS_DIR))
+                scored_rows.append(
+                    (
+                        hit,
+                        len(text),
+                        Result(path, hit, bool(flags[i] & index.FLAG_IS_DIR)),
+                    )
                 )
 
-        scored.sort(key=lambda r: r.score, reverse=True)
-        return scored[:limit], total_candidates
+        # Highest score first; ties broken by shorter total path (more specific).
+        scored_rows.sort(key=lambda row: (-row[0], row[1]))
+        scored = [row[2] for row in scored_rows[:limit]]
+        return scored, total_candidates

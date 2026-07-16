@@ -33,6 +33,11 @@ export interface SearchResult {
   note?: string;
 }
 
+export interface IndexingEvent {
+  phase: 'start' | 'done' | 'error';
+  payload?: { count?: number; message?: string };
+}
+
 const api = {
   status: (): Promise<EngineStatus> => ipcRenderer.invoke('engine:status'),
   search: (pattern: string, opts?: SearchOptions): Promise<SearchResult> =>
@@ -43,6 +48,13 @@ const api = {
     ipcRenderer.invoke('shell:reveal', filePath),
   open: (filePath: string): Promise<boolean | string> =>
     ipcRenderer.invoke('shell:open', filePath),
+  // Subscribe to background (first-launch) indexing progress. Returns an
+  // unsubscribe function.
+  onIndexing: (cb: (e: IndexingEvent) => void): (() => void) => {
+    const listener = (_evt: unknown, data: IndexingEvent) => cb(data);
+    ipcRenderer.on('engine:indexing', listener);
+    return () => ipcRenderer.off('engine:indexing', listener);
+  },
 };
 
 export type MacFindApi = typeof api;

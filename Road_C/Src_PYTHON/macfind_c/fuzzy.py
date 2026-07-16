@@ -6,6 +6,12 @@ backward, then score with bonuses for word boundaries and contiguity and
 penalties for gaps. Scores are only *relative* — higher is better — so exact
 constants need not match Cling's, only their spirit.
 
+On top of the fuzzy scorer sits :func:`rank_score`, which is what the engine
+actually calls. It layers big, deterministic tiers on top of the fuzzy value so
+that **exact / substring matches always outrank scattered subsequence noise**
+(the c-tauri behaviour we are matching: querying ``temp_test`` puts the real
+``temp_test`` directory at position 1, not ``vscode_pytest`` etc.).
+
 Everything works on ``bytes`` that are already lowercased, matching how the
 index stores paths and how the query is normalised in :mod:`macfind_c.engine`.
 """
@@ -23,6 +29,15 @@ BONUS_BOUNDARY_SPACE = 8
 BONUS_BOUNDARY_SEP = 9
 PENALTY_GAP_START = -3
 PENALTY_GAP_EXTEND = -1
+
+# --- Match-quality tiers (dominate the fuzzy value) ----------------------- #
+# These are large relative to any realistic fuzzy score (a long path scores at
+# most a few hundred) so the *kind* of match, not fuzzy incidentals, decides the
+# order. This is what makes an exact basename hit beat every scattered hit.
+TIER_EXACT = 1_000_000      # basename == query
+TIER_PREFIX = 500_000       # basename starts with query
+TIER_SUBSTRING = 250_000    # basename contains query (contiguous)
+TIER_SUBSEQUENCE = 0        # query is only a scattered subsequence
 
 _SEPARATORS = frozenset(b"/\\._- ")
 
@@ -116,3 +131,72 @@ def _score_from_anchor(
     if pi != plen:
         return None
     return (total, anchor, prev_matched + 1)
+
+
+def rank_score(
+    pattern: bytes, path: bytes, bn_start: int
+) -> Optional[int]:
+    """Final ranking score for one index entry — the engine's real hot path.
+
+    ``pattern`` and ``path`` are lowercased bytes; ``bn_start`` is the byte
+    offset of the basename inside ``path`` (index of the char after the last
+    ``/``). Returns an integer where **higher is better**, or ``None`` if the
+    query is not even a subsequence of the path (drop the entry).
+
+    Ranking policy, in order of dominance (this is the c-tauri parity fix):
+
+    1. Basename **exact / prefix / substring** matches get a huge tier bonus so
+       they always beat scattered subsequence hits — a query ``temp_test``
+       ranks the real ``temp_test`` folder at the top, never ``vscode_pytest``.
+    2. Basename matches are always preferred over matches that only appear
+       deeper in the path (``+128`` basename boost vs a full-path fuzzy hit).
+    3. Within a tier, the fzf fuzzy value orders by contiguity / boundaries.
+    4. Shorter basenames win ties (the more-specific hit) — handled by the
+       engine's final sort; here we only fold in a tiny length nudge so a
+       whole-word exact match isn't diluted by trailing chars.
+    """
+    if not pattern:
+        return 0
+
+    basename = path[bn_start:]
+
+    # --- Basename tiers (dominant) ------------------------------------------
+    if basename == pattern:
+        # Exact whole-name match: the strongest possible signal.
+        return TIER_EXACT
+
+    pos = basename.find(pattern)
+    if pos == 0:
+        # Prefix match. Reward tighter fits (shorter tail) slightly.
+        tail = len(basename) - len(pattern)
+        return TIER_PREFIX + max(0, 256 - tail)
+    if pos > 0:
+        # Contiguous substring somewhere in the basename. Earlier = better,
+        # and a boundary-aligned occurrence (after / . - _ space) reads as a
+        # word start and should edge out a mid-word one.
+        prev = basename[pos - 1]
+        boundary = prev in _SEPARATORS
+        return (
+            TIER_SUBSTRING
+            + (64 if boundary else 0)
+            + max(0, 256 - pos)  # earlier occurrence ranks higher
+        )
+
+    # --- Fuzzy subsequence on the basename ----------------------------------
+    bn_hit = score(pattern, basename)
+    if bn_hit is not None:
+        # Basename subsequence: still clearly better than a full-path-only hit.
+        return TIER_SUBSEQUENCE + 128 + bn_hit[0]
+
+    # --- Fall back to the whole path (needed for queries containing '/') ----
+    # A substring of the full path (e.g. "src/main") is contiguous and should
+    # sit just under a basename subsequence.
+    ppos = path.find(pattern)
+    if ppos >= 0:
+        return TIER_SUBSEQUENCE + 64 + max(0, 256 - ppos)
+
+    path_hit = score(pattern, path)
+    if path_hit is not None:
+        return TIER_SUBSEQUENCE + path_hit[0]
+
+    return None

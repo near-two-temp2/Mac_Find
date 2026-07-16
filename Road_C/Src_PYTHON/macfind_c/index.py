@@ -44,7 +44,7 @@ from typing import Iterable, Iterator, List, Optional
 
 import numpy as np
 
-from . import bitmask
+from . import bitmask, volumes
 
 MAGIC = b"MACFIDX1"
 VERSION = 1
@@ -104,19 +104,63 @@ class IndexError(Exception):
 # --------------------------------------------------------------------------- #
 # Building
 # --------------------------------------------------------------------------- #
+def _same_local_device(entry: os.DirEntry, base_dev: int, path: str) -> bool:
+    """True if descending into ``entry`` is safe (local volume, on-list).
+
+    Two guards, matching ``SEARCH_TEST_BASELINE.md``:
+    1. Deny-list: a known cloud/FUSE mountpoint is refused *unconditionally*,
+       even when it currently presents as plain APFS (a stale, unmounted
+       placeholder shares its parent's ``st_dev`` and would otherwise pass).
+    2. Device boundary: a change of ``st_dev`` means a nested mount — follow it
+       only when that new volume is itself local.
+    """
+    if volumes.on_denylist(os.path.abspath(path)):
+        return False
+    try:
+        dev = entry.stat(follow_symlinks=False).st_dev
+    except OSError:
+        return False
+    if dev == base_dev:
+        return True
+    # Different device → a nested mount. Allow only if it's a local volume.
+    return volumes.is_local_path(path)
+
+
 def iter_paths(
     roots: Iterable[str],
     excludes: Iterable[str] = _DEFAULT_EXCLUDES,
     max_entries: Optional[int] = None,
+    skip_network: bool = True,
 ) -> Iterator[tuple[str, bool]]:
     """Walk ``roots`` yielding ``(path, is_dir)`` while skipping ``excludes``.
 
     Uses ``os.scandir`` (which is backed by ``getattrlistbulk`` on macOS) for a
     fast, low-syscall traversal. Symlinks are not followed to avoid cycles.
+
+    When ``skip_network`` is set (the default and the only safe mode on this
+    machine), traversal will not descend into a directory that lives on a
+    non-local volume: network/FUSE/cloud mounts are pruned by both
+    :func:`volumes.is_local_path` (statfs / deny-list) and a per-root device
+    boundary check (``st_dev``). This keeps the scan off the rclone→Backblaze
+    B2 mounts, where recursion would burn API quota. See ``SEARCH_TEST_BASELINE``.
     """
     exclude_tuple = tuple(excludes)
     count = 0
-    stack: List[str] = [os.path.abspath(r) for r in roots]
+    stack: List[str] = []
+    # Record the originating device for each root so we never cross a mount
+    # boundary into a network filesystem nested under a local root.
+    root_dev: dict[str, int] = {}
+    for r in (os.path.abspath(r) for r in roots):
+        if skip_network and not volumes.is_local_path(r):
+            continue
+        try:
+            root_dev[r] = os.lstat(r).st_dev
+        except OSError:
+            root_dev[r] = -1
+        stack.append(r)
+
+    # Map each queued directory to the st_dev of the root it descends from.
+    dev_of: dict[str, int] = dict(root_dev)
     seen: set[str] = set()
 
     while stack:
@@ -124,6 +168,7 @@ def iter_paths(
         if d in seen:
             continue
         seen.add(d)
+        base_dev = dev_of.get(d, -1)
         try:
             it = os.scandir(d)
         except (PermissionError, FileNotFoundError, NotADirectoryError, OSError):
@@ -142,6 +187,11 @@ def iter_paths(
                 if max_entries is not None and count >= max_entries:
                     return
                 if is_dir and not entry.is_symlink():
+                    if skip_network and not _same_local_device(
+                        entry, base_dev, p
+                    ):
+                        continue  # prune: mount boundary / non-local volume
+                    dev_of[p] = base_dev
                     stack.append(p)
 
 
@@ -150,12 +200,20 @@ def build(
     out_path: os.PathLike | str = DEFAULT_INDEX_PATH,
     excludes: Iterable[str] = _DEFAULT_EXCLUDES,
     max_entries: Optional[int] = None,
+    skip_network: bool = True,
 ) -> Path:
     """Scan ``roots`` and write a binary index to ``out_path``.
 
-    Returns the written path. The whole entry set is materialised in memory
-    before writing (fine for the CI smoke test and typical home-directory
-    scans); a streaming builder is a documented TODO for very large volumes.
+    Returns the written path. ``max_entries`` defaults to ``None`` — the whole
+    local filesystem is indexed so nothing (e.g. ``~/temp_test``) is lost to an
+    arbitrary cap; callers can still bound it for a quick CI smoke test.
+    ``skip_network`` (on by default) keeps the scan off network/FUSE/cloud
+    mounts; see :func:`iter_paths`.
+
+    The whole entry set is materialised in memory before writing. Modern Macs
+    have a few hundred thousand to a few million paths, whose parallel arrays +
+    lowercased blob fit comfortably in RAM; a streaming builder remains a
+    documented TODO for pathological volumes.
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -165,7 +223,12 @@ def build(
     flags: List[int] = []
     blob = bytearray()
 
-    for p, is_dir in iter_paths(roots, excludes=excludes, max_entries=max_entries):
+    for p, is_dir in iter_paths(
+        roots,
+        excludes=excludes,
+        max_entries=max_entries,
+        skip_network=skip_network,
+    ):
         lowered = p.lower().encode("utf-8", "ignore")
         masks.append(int(bitmask.of_bytes(lowered)))
         lengths.append(len(lowered))

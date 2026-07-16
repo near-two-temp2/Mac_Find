@@ -12,8 +12,12 @@
  */
 
 import { maskWords, maskContains } from './bitmask';
-import { fuzzyScore } from './fuzzy';
+import { fuzzyScore, substringBoost } from './fuzzy';
 import type { IndexView } from './binaryIndex';
+
+// Basename matches float above deep-path incidental matches. Mirrors the Tauri
+// reference (fzf::score(bn) + 32): a filename hit beats a same-fzf path hit.
+const BASENAME_BONUS = 32;
 
 export interface QueryOptions {
   dirsOnly?: boolean;
@@ -61,8 +65,23 @@ export function scoreSlice(
     const off = byteOffset[i];
     const len = byteLen[i];
     const text = decoder.decode(lowerBlob.subarray(off, off + len));
-    const s = fuzzyScore(patternLower, text, baseStart[i]);
-    if (s === null) continue;
+    const bStart = baseStart[i];
+    const base = bStart > 0 ? text.slice(bStart) : text;
+
+    // Score the *basename* first (with a boost) so a filename hit floats above
+    // an incidental deep-path match; fall back to the full path so queries with
+    // '/' (or that only match across path segments) still work. On top of both,
+    // add the substring/exact/prefix boost so a contiguous hit like basename
+    // "temp_test" outranks any scattered subsequence noise.
+    const baseFzf = fuzzyScore(patternLower, base, 0);
+    let s: number;
+    if (baseFzf !== null) {
+      s = baseFzf + BASENAME_BONUS + substringBoost(patternLower, base);
+    } else {
+      const pathFzf = fuzzyScore(patternLower, text, bStart);
+      if (pathFzf === null) continue;
+      s = pathFzf + substringBoost(patternLower, text);
+    }
 
     hits.push({ index: i, score: s });
   }

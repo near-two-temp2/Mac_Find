@@ -105,6 +105,8 @@ final class AppModel: ObservableObject {
     }
 
     func refreshStatus() {
+        // Don't clobber the "building index…" message mid-build.
+        if isBuilding { return }
         let s = engine.status
         backendLabel = s.backend.rawValue
         if s.backend == .index {

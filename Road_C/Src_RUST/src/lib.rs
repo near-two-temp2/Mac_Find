@@ -11,6 +11,7 @@ pub mod bitmask;
 pub mod engine;
 pub mod fuzzy;
 pub mod index;
+pub mod mounts;
 pub mod reveal;
 pub mod searchfs;
 

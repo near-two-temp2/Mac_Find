@@ -22,6 +22,71 @@ public enum FuzzyScore {
     static let penaltyGapStart     = -3
     static let penaltyGapExtend    = -1
 
+    // Tier bonuses that make *literal* matches dominate scattered fuzzy hits.
+    // These are deliberately large relative to the per-character weights above so
+    // that, e.g., an exact `temp_test` basename can never be out-ranked by a
+    // scattered subsequence like `contemplate_stest`. See §"精确/子串置顶".
+    static let tierExact           = 100_000   // whole text == pattern
+    static let tierPrefix          = 40_000    // text starts with pattern
+    static let tierWordStart       = 20_000    // pattern sits at a word boundary
+    static let tierSubstring       = 10_000    // pattern is a contiguous substring
+    // (no tier bonus ⇒ plain scattered subsequence, ranks below all of the above)
+
+    /// Score with the literal-match tiers layered on top of the fzf score.
+    /// `text`/`pattern` are lowercased; `boundaries` marks word starts (bit i ⇒
+    /// text byte i begins a word). Returns nil for a non-subsequence.
+    ///
+    /// The returned score is `tier + fuzzy`, so ordering is: exact > prefix >
+    /// word-start-substring > substring > scattered. Within a tier the fzf score
+    /// (contiguity/boundary/gap) still discriminates.
+    public static func scoreRanked(
+        pattern: UnsafeBufferPointer<UInt8>,
+        text: UnsafeBufferPointer<UInt8>,
+        boundaries: UInt64,
+        boundariesOffset: Int
+    ) -> (score: Int, start: Int, end: Int)? {
+        guard let base = score(pattern: pattern, text: text,
+                               boundaries: boundaries, boundariesOffset: boundariesOffset)
+        else { return nil }
+
+        let tier = literalTier(pattern: pattern, text: text,
+                               boundaries: boundaries, boundariesOffset: boundariesOffset)
+        return (base.score + tier, base.start, base.end)
+    }
+
+    /// Detect the strongest literal relationship between `pattern` and `text`.
+    /// Returns the matching tier bonus (0 for a plain scattered match).
+    @inline(__always)
+    static func literalTier(
+        pattern: UnsafeBufferPointer<UInt8>,
+        text: UnsafeBufferPointer<UInt8>,
+        boundaries: UInt64,
+        boundariesOffset: Int
+    ) -> Int {
+        let pLen = pattern.count
+        let tLen = text.count
+        if pLen == 0 || pLen > tLen { return 0 }
+
+        // Find the first contiguous occurrence of `pattern` inside `text`.
+        var at = -1
+        var i = 0
+        while i <= tLen - pLen {
+            var k = 0
+            while k < pLen && text[i + k] == pattern[k] { k += 1 }
+            if k == pLen { at = i; break }
+            i += 1
+        }
+        if at < 0 { return 0 }                       // not a substring at all
+
+        if at == 0 {
+            return tLen == pLen ? tierExact : tierPrefix
+        }
+        // Substring elsewhere — extra credit if it starts on a word boundary.
+        let bit = at - boundariesOffset
+        let onBoundary = bit >= 0 && bit < 64 && (boundaries & (1 << UInt64(bit))) != 0
+        return onBoundary ? tierWordStart : tierSubstring
+    }
+
     /// Score `pattern` against `text` (both lowercased). Returns nil if not a
     /// subsequence match. `boundaries`/`boundariesOffset` describe word starts
     /// as in the doc-comment above.

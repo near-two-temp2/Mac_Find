@@ -12,8 +12,13 @@ license = { text = "BSD-3-Clause" }
 authors = [{ name = "Mac_Find 18 implementation matrix — c-python" }]
 
 dependencies = [
-    "PyQt6>=6.6",
-    "numpy>=1.24",
+    # macOS 12 (Intel) floor: PyQt6-Qt6 >= 6.8 requires macOS 13+ at runtime,
+    # so the app would not open on the user's 12.7.6. Qt 6.6.x is the last line
+    # that ships a real x86_64 wheel (macosx_10_14) AND still runs on macOS 12.
+    "PyQt6==6.6.1",
+    "PyQt6-Qt6==6.6.*",
+    "PyQt6-sip>=13.6,<14",
+    "numpy>=1.24,<2.1",
 ]
 
 [project.optional-dependencies]

@@ -21,11 +21,20 @@ from .engine import HybridEngine, Source
 
 def _cmd_index(args: argparse.Namespace) -> int:
     from . import index as index_mod
+    from . import volumes
 
-    roots = args.roots or [str(Path.home())]
+    roots = args.roots or volumes.local_scan_roots()
     out = Path(args.out) if args.out else index_mod.DEFAULT_INDEX_PATH
-    print(f"Scanning {roots} (max {args.max}) -> {out}", file=sys.stderr)
-    written = index_mod.build(roots, out_path=out, max_entries=args.max)
+    # --max 0 (the default) means "no cap": index the whole local filesystem so
+    # nothing is dropped. Network/FUSE/cloud mounts are always skipped.
+    max_entries = args.max if args.max and args.max > 0 else None
+    print(
+        f"Scanning {roots} (max {max_entries or 'unlimited'}) -> {out}",
+        file=sys.stderr,
+    )
+    written = index_mod.build(
+        roots, out_path=out, max_entries=max_entries, skip_network=True
+    )
     view = index_mod.load(written)
     print(f"Wrote {view.entry_count:,} entries to {written}")
     return 0
@@ -70,10 +79,18 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command")
 
     pi = sub.add_parser("index", help="build the binary index")
-    pi.add_argument("roots", nargs="*", help="roots to scan (default: $HOME)")
+    pi.add_argument(
+        "roots",
+        nargs="*",
+        help="roots to scan (default: local volumes, network drives skipped)",
+    )
     pi.add_argument("-o", "--out", help="output .idx path")
     pi.add_argument(
-        "-m", "--max", type=int, default=200_000, help="max entries to index"
+        "-m",
+        "--max",
+        type=int,
+        default=0,
+        help="max entries to index (0 = unlimited, the default)",
     )
     pi.set_defaults(func=_cmd_index)
 

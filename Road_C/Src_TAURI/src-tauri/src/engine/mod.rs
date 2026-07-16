@@ -11,6 +11,7 @@
 
 pub mod fzf;
 pub mod index;
+pub mod mounts;
 pub mod searchfs;
 pub mod types;
 

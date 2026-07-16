@@ -78,7 +78,10 @@ function registerIpc(): void {
     async (_evt, roots?: string[], max?: number) => {
       const e = await ensureEngine();
       const targets = roots && roots.length ? roots : defaultRoots();
-      return e.rebuildIndex(targets, max ?? 100000);
+      // No entry cap by default — the baseline requires covering the whole
+      // local disk (must not drop ~/temp_test to a 50k/100k limit). `max` stays
+      // optional for CI smoke runs only.
+      return e.rebuildIndex(targets, max);
     }
   );
 
@@ -93,9 +96,42 @@ function registerIpc(): void {
   });
 }
 
+/**
+ * First-launch auto-index (SEARCH_TEST_BASELINE.md §5.4 / CLAUDE.md §🔄): if no
+ * usable index exists yet, build one in the background instead of silently
+ * degrading every query to the slow (~86s) searchfs full-scan. The renderer is
+ * notified via 'engine:indexing' events so it can show progress and refresh
+ * status when the build completes.
+ */
+async function maybeAutoIndex(): Promise<void> {
+  const e = await ensureEngine();
+  if (e.hasIndex()) return; // already have one — nothing to do
+
+  const notify = (phase: 'start' | 'done' | 'error', payload?: unknown) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('engine:indexing', { phase, payload });
+    }
+  };
+
+  notify('start');
+  try {
+    const count = await e.rebuildIndex(defaultRoots());
+    notify('done', { count });
+  } catch (err) {
+    notify('error', { message: err instanceof Error ? err.message : String(err) });
+  }
+}
+
 app.whenReady().then(() => {
   registerIpc();
   createWindow();
+
+  // Kick the first-launch build once the window can receive events.
+  if (mainWindow) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      void maybeAutoIndex();
+    });
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

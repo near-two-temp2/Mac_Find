@@ -34,15 +34,28 @@ public final class HybridEngine {
 
     public let indexPath: String
 
-    /// Roots the initial scan walks. Defaults to the user's home, which is where
-    /// searchable user content lives; the whole-volume searchfs() fallback still
-    /// covers everything else on demand.
+    /// Roots the initial scan walks. Defaults to every *local* volume — the home
+    /// dir plus each mounted apfs/hfs volume under `/Volumes` — so full-disk
+    /// coverage finds e.g. both `/Users/.../temp_test` and
+    /// `/Volumes/MacDisk/.../temp_test`. Network/FUSE volumes are filtered out
+    /// here and again pruned during the walk (device boundary + denylist).
     public let roots: [String]
 
     public init(indexPath: String? = nil, roots: [String]? = nil) {
         self.indexPath = indexPath ?? Self.defaultIndexPath()
-        self.roots = roots ?? [NSHomeDirectory()]
+        self.roots = roots ?? Self.defaultRoots()
         _ = try? loadIndex()
+    }
+
+    /// Local-only root for a full-disk scan. A single `/` covers everything:
+    ///   - the system + data volume (the walk follows macOS's firmlink so
+    ///     `/Users/...` is reached), and
+    ///   - every additional *local* volume under `/Volumes` (the walk crosses
+    ///     into apfs/hfs mounts but the guard prunes network/FUSE ones).
+    /// This is why both `/Users/oracle/temp_test` and
+    /// `/Volumes/MacDisk/Users/Shared/temp_test` end up in one index.
+    static func defaultRoots() -> [String] {
+        ["/"]
     }
 
     /// Standard cache location for the index, mirroring Cling's convention.

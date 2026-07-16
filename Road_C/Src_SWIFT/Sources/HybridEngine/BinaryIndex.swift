@@ -39,7 +39,10 @@ import Foundation
 public enum IndexFormat {
     /// "MHFINDC1" as a little-endian UInt64 tag.
     public static let magic: UInt64 = 0x3143_444E_4946_484D
-    public static let version: UInt32 = 2
+    /// Bumped whenever the ranking/build semantics change so that any index
+    /// written by an older build is treated as corrupt and rebuilt, rather than
+    /// silently served with the old (buggy) ordering.
+    public static let version: UInt32 = 3
     public static let headerSize = 40
 
     @inline(__always)

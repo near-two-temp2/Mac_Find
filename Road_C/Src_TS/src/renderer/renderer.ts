@@ -122,5 +122,25 @@ reindexBtn.addEventListener('click', async () => {
   }
 });
 
+// First-launch auto-index progress (main process builds the index in the
+// background when none exists yet, instead of degrading to slow searchfs).
+window.macfind.onIndexing((e) => {
+  if (e.phase === 'start') {
+    reindexBtn.disabled = true;
+    reindexBtn.textContent = 'Indexing…';
+    statusLine.textContent = 'First launch: building index (local volumes only)…';
+  } else if (e.phase === 'done') {
+    reindexBtn.disabled = false;
+    reindexBtn.textContent = 'Build index';
+    statusLine.textContent = `Index built: ${e.payload?.count ?? 0} entries`;
+    void refreshStatus();
+    if (input.value.trim()) void runSearch();
+  } else {
+    reindexBtn.disabled = false;
+    reindexBtn.textContent = 'Build index';
+    statusLine.textContent = `Index build failed: ${e.payload?.message ?? 'unknown error'}`;
+  }
+});
+
 refreshStatus();
 input.focus();

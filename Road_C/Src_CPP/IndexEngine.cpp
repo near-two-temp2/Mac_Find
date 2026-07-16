@@ -1,5 +1,6 @@
 // IndexEngine.cpp — self-built binary index: fts scan, bitmask prefilter, fzf.
 #include "IndexEngine.h"
+#include "VolumeFilter.h"
 
 #include <algorithm>
 #include <cctype>
@@ -58,6 +59,12 @@ std::string defaultIndexPath() {
     return homeDir() + "/Library/Caches/org.macfind.roadc.cpp.idx";
 }
 
+std::vector<std::string> defaultIndexRoots() {
+    std::vector<std::string> roots{homeDir()};
+    if (access("/Applications", F_OK) == 0) roots.emplace_back("/Applications");
+    return roots;
+}
+
 uint64_t charMask(const std::string& low) {
     uint64_t m = 0;
     for (char c : low) {
@@ -105,6 +112,60 @@ FuzzyScore fuzzyScore(const std::string& pattern, const std::string& text,
     return fs;
 }
 
+RankScore rankPath(const std::string& pat, const std::string& low,
+                   std::size_t bnStart) {
+    RankScore rs;
+    if (pat.empty()) { rs.matched = true; rs.score = 1; return rs; }
+
+    // Coarse tiers dominate the ordering; the fzf score only breaks ties
+    // *within* a tier. The gap between tiers (kTier) is far larger than any
+    // realistic fzf score for a short query, so an exact/substring hit can
+    // never be overtaken by scattered subsequence noise. This is the fix for
+    // "temp_test → /Users/oracle/temp_test ranks #1" (SEARCH_TEST_BASELINE.md).
+    constexpr long kTier = 1'000'000;   // >> any fzf score
+    enum Tier {
+        T_NONE          = 0,
+        T_SUBSEQ        = 1,  // scattered fzf subsequence (weakest real hit)
+        T_PATH_SUBSTR   = 2,  // contiguous substring somewhere in the path
+        T_BN_SUBSTR     = 3,  // contiguous substring inside the basename
+        T_BN_PREFIX     = 4,  // basename starts with the query
+        T_BN_EXACT      = 5,  // basename == query (the bullseye)
+    };
+
+    const std::string bn = low.substr(bnStart);
+
+    int tier = T_NONE;
+    if (bn == pat) {
+        tier = T_BN_EXACT;
+    } else if (bn.size() >= pat.size() && bn.compare(0, pat.size(), pat) == 0) {
+        tier = T_BN_PREFIX;
+    } else if (bn.find(pat) != std::string::npos) {
+        tier = T_BN_SUBSTR;
+    } else if (low.find(pat) != std::string::npos) {
+        tier = T_PATH_SUBSTR;
+    }
+
+    // Fine score: fzf over the whole path (biased to the basename start). Used
+    // both to rank inside a tier and to decide subsequence membership for the
+    // weakest tier.
+    FuzzyScore fzf = fuzzyScore(pat, low, bnStart);
+    if (tier == T_NONE) {
+        // No contiguous hit anywhere; fall back to scattered subsequence only.
+        if (!fzf.matched) { rs.matched = false; return rs; }
+        tier = T_SUBSEQ;
+    }
+
+    // Shorter paths win ties (more specific / shallower). Encode as a small
+    // negative nudge so it never crosses a tier or overwhelms fzf ranking.
+    const long shallow = -static_cast<long>(std::min<std::size_t>(low.size(), 4096));
+
+    rs.matched = true;
+    rs.score   = static_cast<long>(tier) * kTier
+               + static_cast<long>(fzf.score) * 8
+               + shallow;
+    return rs;
+}
+
 void IndexEngine::addEntry(const std::string& path, bool isDir) {
     if (path.size() > UINT16_MAX) return;  // skip absurdly long paths
     std::string low = lowered(path);
@@ -138,34 +199,59 @@ bool IndexEngine::build(const std::vector<std::string>& roots,
     isDirs_.clear();
 
     std::vector<std::string> scanRoots = roots.empty()
-                                             ? std::vector<std::string>{homeDir()}
+                                             ? defaultIndexRoots()
                                              : roots;
 
     for (const auto& root : scanRoots) {
+        // Never even open a root that's already a known network/FUSE mount.
+        if (isExplicitlyExcluded(root)) continue;
+
         char* const paths[] = {const_cast<char*>(root.c_str()), nullptr};
-        // FTS_NOSTAT keeps the walk fast (Cling relies on the same trick). The
-        // catch: with FTS_NOSTAT, non-directory entries arrive as FTS_NSOK
-        // (stat not requested) rather than FTS_F, so we must handle that too —
-        // otherwise only directories get indexed. fts still stats directories
-        // (it has to, to recurse), so FTS_D remains reliable for the isDir flag.
-        FTS* fts = fts_open(paths, FTS_PHYSICAL | FTS_NOSTAT | FTS_NOCHDIR, nullptr);
+        // We keep FTS_PHYSICAL (don't follow symlinks) but drop FTS_NOSTAT: we
+        // need fts_statp->st_dev on directories to detect when the walk crosses
+        // a mount boundary. The stat cost is paid only on real inodes fts must
+        // visit anyway; it's worth it to guarantee we never wander onto a
+        // network/FUSE mount (rclone→B2), which would be slow and cost money.
+        FTS* fts = fts_open(paths, FTS_PHYSICAL | FTS_NOCHDIR, nullptr);
         if (!fts) continue;
+
+        // Device id of the root's own volume. Crossing onto a *different*
+        // device means we hit a submount; we re-admit it only if statfs says
+        // it's a local apfs/hfs volume (mountIsIndexable) — otherwise prune.
+        dev_t rootDev = 0;
+        bool  haveRootDev = false;
 
         FTSENT* ent;
         while ((ent = fts_read(fts)) != nullptr) {
             switch (ent->fts_info) {
-                case FTS_D:    // directory, pre-order
+                case FTS_D: {  // directory, pre-order
+                    const dev_t dev = ent->fts_statp ? ent->fts_statp->st_dev : 0;
+                    if (!haveRootDev) { rootDev = dev; haveRootDev = true; }
+
+                    // Belt: explicit blocklist (h2-* rclone, CloudStorage).
+                    if (isExplicitlyExcluded(ent->fts_path)) {
+                        fts_set(fts, ent, FTS_SKIP);  // don't descend
+                        break;
+                    }
+                    // Suspenders: any directory on a device other than the
+                    // root's is a crossed mount — only descend if it's a local
+                    // catalog volume. This prunes network mounts by device.
+                    if (dev != rootDev && !mountIsIndexable(ent->fts_path)) {
+                        fts_set(fts, ent, FTS_SKIP);  // prune the whole subtree
+                        break;
+                    }
                     addEntry(ent->fts_path, /*isDir=*/true);
                     break;
+                }
                 case FTS_DP:   // directory, post-order — already counted at FTS_D
                     break;
                 case FTS_DNR:  // directory we can't read — still index its name
                     addEntry(ent->fts_path, /*isDir=*/true);
                     break;
-                case FTS_F:      // regular file (only when stat info is present)
+                case FTS_F:      // regular file
                 case FTS_SL:     // symlink
                 case FTS_SLNONE: // broken symlink
-                case FTS_NSOK:   // no stat requested — the common case under FTS_NOSTAT
+                case FTS_NSOK:   // stat unavailable — index the name anyway
                 case FTS_DEFAULT:
                     addEntry(ent->fts_path, /*isDir=*/false);
                     break;
@@ -270,7 +356,7 @@ SearchOutcome IndexEngine::query(const std::string& term,
     const uint64_t    want = charMask(pat);
 
     // Phase 1 + 2 combined in a single pass over the parallel arrays.
-    struct Scored { uint32_t idx; int score; };
+    struct Scored { uint32_t idx; long score; };
     std::vector<Scored> hits;
 
     const char* lowPool  = reinterpret_cast<const char*>(lowBytes_.data());
@@ -285,23 +371,24 @@ SearchOutcome IndexEngine::query(const std::string& term,
         // Phase 1: one AND rejects any path missing a required char class.
         if ((masks_[i] & want) != want) continue;
 
-        // Phase 2: fzf score against the lowercased path, biased to the basename.
+        // Phase 2: tiered rank (exact/prefix/substring > scattered fzf) so the
+        // literal `temp_test` directory beats fzf noise; see rankPath().
         std::string low(lowPool + byteOffsets_[i], byteLengths_[i]);
-        FuzzyScore fscore = fuzzyScore(pat, low, bnStarts_[i]);
-        if (!fscore.matched) continue;
+        RankScore rscore = rankPath(pat, low, bnStarts_[i]);
+        if (!rscore.matched) continue;
 
         // Case-sensitive mode: require the original term as a literal substring
-        // of the original-case path (fzf already confirmed the lowercased
-        // subsequence, so this only tightens, never loosens).
+        // of the original-case path (the rank already confirmed a lowercased
+        // hit, so this only tightens, never loosens).
         if (opts.caseSensitive) {
             std::string orig(origPool + byteOffsets_[i], byteLengths_[i]);
             if (orig.find(term) == std::string::npos) continue;
         }
 
-        hits.push_back({static_cast<uint32_t>(i), fscore.score});
+        hits.push_back({static_cast<uint32_t>(i), rscore.score});
     }
 
-    // Best-first by fzf score.
+    // Best-first by tiered rank score.
     std::sort(hits.begin(), hits.end(),
               [](const Scored& a, const Scored& b) { return a.score > b.score; });
 
@@ -313,7 +400,7 @@ SearchOutcome IndexEngine::query(const std::string& term,
         SearchResult r;
         r.path  = std::string(origPool + byteOffsets_[h.idx], byteLengths_[h.idx]);
         r.isDir = isDirs_[h.idx] != 0;
-        r.score = h.score;
+        r.score = static_cast<int>(h.score);  // tiered score fits in int (< 2^31)
         out.results.push_back(std::move(r));
     }
     return out;

@@ -9,6 +9,12 @@
  *   - matches near the start of the (base)name
  * and penalises gaps between matched characters.
  *
+ * On top of the raw fzf score we add a strong *substring / exact / prefix* tier
+ * (see `substringBoost`). This is what keeps a clean hit like basename
+ * "temp_test" for query "temp_test" far above scattered subsequence noise like
+ * "testing_tools" or "vscode_pytest" — the requirement in
+ * SEARCH_TEST_BASELINE.md (真目录排第 1).
+ *
  * Scoring constants roughly follow the analysis table:
  *   char match +16, consecutive +4, first-char x2,
  *   word-boundary bonus +7..+9, gap start -3, gap continue -1.
@@ -20,6 +26,13 @@ const SCORE_BOUNDARY = 8;
 const GAP_START = -3;
 const GAP_EXTEND = -1;
 
+// Substring / exact / prefix tier. These dwarf the per-char fzf score so any
+// contiguous-substring hit ranks above every scattered-subsequence hit.
+export const BOOST_EXACT = 4000; // text === pattern
+export const BOOST_PREFIX = 2500; // text starts with pattern
+export const BOOST_SUFFIX = 1500; // text ends with pattern (e.g. …/temp_test)
+export const BOOST_SUBSTRING = 1000; // pattern occurs contiguously anywhere
+
 function isBoundaryPrev(code: number): boolean {
   // A char preceded by one of these is treated as a word boundary.
   return (
@@ -29,6 +42,25 @@ function isBoundaryPrev(code: number): boolean {
     code === 46 || // '.'
     code === 32 // space
   );
+}
+
+/**
+ * Contiguous-match boost for `pattern` inside `text` (both lowercase).
+ * Returns 0 when `pattern` is not a contiguous substring of `text`.
+ * Exact > prefix > suffix > interior; a boundary-aligned interior match
+ * (pattern preceded by a separator) gets a little extra so "…/temp_test/…"
+ * beats "…xtemp_testx…".
+ */
+export function substringBoost(pattern: string, text: string): number {
+  if (pattern.length === 0) return 0;
+  if (text === pattern) return BOOST_EXACT;
+  const idx = text.indexOf(pattern);
+  if (idx < 0) return 0;
+  if (idx === 0) return BOOST_PREFIX;
+  if (idx + pattern.length === text.length) return BOOST_SUFFIX;
+  let boost = BOOST_SUBSTRING;
+  if (isBoundaryPrev(text.charCodeAt(idx - 1))) boost += 200;
+  return boost;
 }
 
 /**

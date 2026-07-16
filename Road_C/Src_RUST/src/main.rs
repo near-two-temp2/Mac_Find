@@ -61,8 +61,65 @@ mod app {
         eframe::run_native(
             "haifind-c-gui",
             options,
-            Box::new(|cc| Ok(Box::new(App::new(cc)))),
+            Box::new(|cc| {
+                // 🈶 先装中文字体，否则界面中文显示为方框（tofu）。
+                install_cjk_fonts(&cc.egui_ctx);
+                Ok(Box::new(App::new(cc)))
+            }),
         )
+    }
+
+    /// 🈶 给 egui 注册一个 CJK 字体，修复中文方框（tofu）。
+    ///
+    /// egui 默认字体集不含 CJK 字形，中文全渲染成 □。这里在**运行时**读取 macOS
+    /// 系统自带的 CJK 字体文件（每台 Mac 都有，无需打包大字体），把它插到
+    /// Proportional / Monospace 两个 family 的**首位**（优先用它取字形，拉丁字符
+    /// 仍由后面的内置字体兜底）。按优先级尝试多个候选路径，任一读到即用；
+    /// 全都读不到时静默跳过（退化为原来的 tofu，但不崩溃）。
+    fn install_cjk_fonts(ctx: &eframe::egui::Context) {
+        use eframe::egui::{FontData, FontDefinitions, FontFamily};
+
+        // 候选系统字体（覆盖旧新 macOS）：PingFang(现代)、STHeiti、Hiragino GB。
+        // 首选 PingFang.ttc —— 开发机(macOS 12)与 CI runner 上都存在。
+        const CANDIDATES: &[&str] = &[
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+            "/System/Library/Fonts/Hiragino Sans GB.ttc",
+            "/Library/Fonts/Arial Unicode.ttf",
+        ];
+
+        let mut loaded: Option<(&str, Vec<u8>)> = None;
+        for path in CANDIDATES {
+            if let Ok(bytes) = std::fs::read(path) {
+                loaded = Some((path, bytes));
+                break;
+            }
+        }
+
+        let (path, bytes) = match loaded {
+            Some(v) => v,
+            None => {
+                eprintln!("警告：未找到系统 CJK 字体，中文可能显示为方框。");
+                return;
+            }
+        };
+
+        const KEY: &str = "cjk";
+        let mut fonts = FontDefinitions::default();
+        fonts
+            .font_data
+            .insert(KEY.to_owned(), FontData::from_owned(bytes));
+        // 插到两个 family 的最前，让 CJK 字形优先命中。
+        for family in [FontFamily::Proportional, FontFamily::Monospace] {
+            fonts
+                .families
+                .entry(family)
+                .or_default()
+                .insert(0, KEY.to_owned());
+        }
+        ctx.set_fonts(fonts);
+        eprintln!("已加载 CJK 字体：{path}");
     }
 
     struct App {
@@ -108,10 +165,19 @@ mod app {
                 (e.has_index(), e.index_len())
             };
 
+            // 🔄 首次启动无索引 → 立即在后台自动建索引，别默认走 searchfs 慢路径
+            //    （全盘 searchfs ~86s）。建索引已在 build_index 里避开网络/云盘。
+            let auto_building = !index_present;
+            if auto_building {
+                let _ = req_tx.send(Req::BuildIndex {
+                    roots: default_roots(),
+                });
+            }
+
             let status_line = if index_present {
                 format!("索引已加载：{index_len} 条。搜索走索引主路径。")
             } else {
-                "无索引：搜索将走 searchfs() 实时兜底。可点「建索引」切到主路径。".into()
+                "首次启动：正在后台自动建索引（避开网络/云盘）…完成后即秒级搜索。".into()
             };
 
             App {
@@ -131,7 +197,7 @@ mod app {
                 index_present,
                 index_len,
                 index_path,
-                building: false,
+                building: auto_building,
                 status_line,
                 req_tx,
                 msg_rx,

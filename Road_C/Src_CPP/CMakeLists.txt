@@ -18,6 +18,7 @@ add_library(hybrid_engine STATIC
     IndexEngine.cpp     IndexEngine.h
     SearchFsEngine.cpp  SearchFsEngine.h
     HybridEngine.cpp    HybridEngine.h
+    VolumeFilter.cpp    VolumeFilter.h
     SearchTypes.h)
 target_include_directories(hybrid_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

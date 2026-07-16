@@ -20,10 +20,12 @@
 //! Everything is a parallel array so the hot loop touches contiguous memory.
 
 use crate::engine::fzf;
+use crate::engine::mounts::NetworkGuard;
 use crate::engine::types::{Hit, SearchOptions};
 use rayon::prelude::*;
 use std::fs;
 use std::io::{self, Read, Write};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use walkdir::WalkDir;
@@ -88,6 +90,16 @@ impl Index {
     /// Walk `roots` and build a fresh index, writing it to `out_path`.
     /// Returns the number of entries indexed. Follows no symlinks; silently
     /// skips unreadable directories (permission-limited CI is fine).
+    ///
+    /// **Network / FUSE mounts are never traversed.** Two independent guards:
+    ///   1. `NetworkGuard::should_prune` prunes any directory on a non-local
+    ///      mount (from the kernel mount table) or a known-bad path prefix
+    ///      (rclone→B2 `/Volumes/Disk/h2-*`, `~/Library/CloudStorage/*`).
+    ///   2. We stay on the root's originating device (`st_dev`), so any mount
+    ///      nested inside a root is pruned at its boundary even if the fstype
+    ///      probe misses it. This is the `FTS_XDEV` equivalent.
+    /// There is **no cap** on the number of entries indexed — full-disk
+    /// coverage is intentional (subject to the network-drive exclusions).
     pub fn build(roots: &[PathBuf], out_path: &Path) -> io::Result<usize> {
         let mut masks = Vec::new();
         let mut bn_masks = Vec::new();
@@ -97,12 +109,34 @@ impl Index {
         let mut is_dirs = Vec::new();
         let mut blob: Vec<u8> = Vec::new();
 
+        let guard = NetworkGuard::new();
+
         for root in roots {
+            // Device id of this root; entries on a different device are on a
+            // different (possibly remote) mount and get pruned. If we can't
+            // stat the root, fall back to guard-only pruning (dev = 0 disables
+            // the cross-device check for this root).
+            let root_dev = fs::symlink_metadata(root).map(|m| m.dev()).unwrap_or(0);
+
             for entry in WalkDir::new(root)
                 .follow_links(false)
                 .into_iter()
+                // Prune whole subtrees that live on a network/FUSE mount before
+                // descending — this is what actually stops us from hammering
+                // B2 or hanging on a remote share.
+                .filter_entry(|e| !guard.should_prune(e.path()))
                 .filter_map(|e| e.ok())
             {
+                // Cross-device guard: skip anything not on the root's device.
+                // (dev == 0 means the root stat failed → don't apply.)
+                if root_dev != 0 {
+                    if let Ok(md) = entry.metadata() {
+                        if md.dev() != root_dev {
+                            continue;
+                        }
+                    }
+                }
+
                 let path = entry.path();
                 let path_str = match path.to_str() {
                     Some(s) => s,

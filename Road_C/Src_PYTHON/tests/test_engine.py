@@ -58,6 +58,87 @@ def test_fuzzy_empty_pattern():
 
 
 # --------------------------------------------------------------------------- #
+# rank_score — exact / substring must dominate scattered subsequence noise
+# --------------------------------------------------------------------------- #
+def _rank(query: str, path: str) -> int | None:
+    p = path.encode()
+    bn = p.rfind(b"/") + 1
+    return fuzzy.rank_score(query.encode(), p, bn if bn >= 0 else 0)
+
+
+def test_rank_exact_basename_wins():
+    # Exact basename hit must beat a same-letters-but-scattered subsequence
+    # (basename "t_e_m_p_-_t_e_s_t" contains temp_test only as a scattered run).
+    exact = _rank("temp_test", "/users/oracle/temp_test")
+    scattered = _rank("temp_test", "/x/txexmxpx_xtxexsxt")
+    assert exact is not None and scattered is not None
+    assert exact > scattered
+    # A path missing a required letter isn't even a subsequence -> dropped.
+    assert _rank("temp_test", "/users/oracle/vscode_pytest") is None
+
+
+def test_rank_substring_beats_subsequence():
+    # A contiguous "temp_test" in the basename must outrank a scattered match.
+    sub = _rank("temp_test", "/x/my_temp_test_dir")
+    scat = _rank("temp_test", "/x/t_e_m_p_t_e_s_t")
+    assert sub is not None
+    if scat is not None:  # scattered may or may not be a subsequence
+        assert sub > scat
+
+
+def test_rank_basename_beats_deep_path_match():
+    # "config" in the basename beats "config" only appearing in a parent dir.
+    bn = _rank("config", "/etc/app/config")
+    deep = _rank("config", "/config/app/data.bin")
+    assert bn is not None and deep is not None
+    assert bn > deep
+
+
+def test_rank_non_subsequence_is_none():
+    assert _rank("zzzz", "/users/oracle/temp_test") is None
+
+
+def test_engine_exact_dir_ranks_first(tmp_path: Path):
+    # Build a tree where the exact "temp_test" dir competes with fzf noise.
+    tree = tmp_path / "tree"
+    (tree / "temp_test").mkdir(parents=True)
+    (tree / "vscode_pytest").mkdir()
+    (tree / "testing_tmp_helpers").mkdir()
+    (tree / "temp_test" / "inner.txt").write_text("x")
+    idx_path = tmp_path / "rank.idx"
+    index.build([str(tree)], out_path=idx_path)
+
+    engine = HybridEngine(index_path=idx_path)
+    out = engine.search("temp_test")
+    assert out.source == Source.INDEX
+    assert out.results, "expected at least one hit"
+    # The real basename-exact directory must be first.
+    assert out.results[0].path.endswith("/temp_test")
+    assert out.results[0].is_dir
+
+
+# --------------------------------------------------------------------------- #
+# volumes — local-path guard degrades safely off-macOS
+# --------------------------------------------------------------------------- #
+def test_volumes_local_scan_roots_nonempty():
+    from macfind_c import volumes
+
+    roots = volumes.local_scan_roots()
+    assert isinstance(roots, list) and roots
+    # Home must be in scope, and no known B2/cloud mount may leak in.
+    assert any(str(Path.home()) == r or r.startswith(str(Path.home())) for r in roots)
+    for r in roots:
+        assert not r.startswith("/Volumes/Disk/h2-")
+
+
+def test_volumes_denylist_rejected():
+    from macfind_c import volumes
+
+    assert volumes.is_local_path("/Volumes/Disk/h2-bu-01/anything") is False
+    assert volumes.is_local_path("/Volumes/Disk/h2_bu_01_b2/x") is False
+
+
+# --------------------------------------------------------------------------- #
 # index build / load round-trip
 # --------------------------------------------------------------------------- #
 def _make_tree(root: Path) -> None:

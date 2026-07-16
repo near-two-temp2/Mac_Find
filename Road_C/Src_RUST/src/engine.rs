@@ -181,15 +181,23 @@ impl Default for HybridEngine {
 
 /// 索引引擎两阶段搜索：
 ///   Phase 1 —— rayon 并行 bitmask 预过滤（O(n)，一条 AND 排除绝大多数）；
-///   Phase 2 —— 对存活候选做 fzf 评分；
+///   Phase 2 —— 对存活候选做「精确/子串置顶 + fzf 兜底」评分；
 /// 最后按分数降序取前 `limit` 条。
+///
+/// 🎯 排序核心（对齐 SEARCH_TEST_BASELINE.md「正确行为判据」）：
+/// 让**连续子串命中 basename** 的结果（如 basename == `temp_test`）**远高于**
+/// 分散 fzf 子序列噪音（`vscode_pytest`、`testing_tools` 之类）。分层如下：
+///   1. basename **精确等于** query          → 最高优先级（`EXACT_TIER`）
+///   2. basename **包含** query 连续子串      → 次高（`SUBSTR_TIER`）
+///      - 且子串起点在词边界（紧跟 `/ . - _`）再 + 一档，前缀命中最优
+///   3. 仅 fzf 子序列命中（basename 或 path）  → 基础 fzf 分（最低层）
+/// 三层之间用大常量间隔，保证 (1)/(2) 永远压过任何 (3) 的散点分。
 fn search_index(reader: &IndexReader, opts: &SearchOptions) -> Vec<Match> {
     let query_lower: Vec<u8> = opts.query.bytes().map(|b| b.to_ascii_lowercase()).collect();
     let query_mask = mask_of(&query_lower);
     let n = reader.len();
 
-    // Phase 1 + Phase 2 融合并行：每个 entry 先 bitmask 预过滤，存活则 fzf 评分。
-    // 优先用 basename 评分（更贴合「文件名搜索」直觉），basename 不中再退回全路径。
+    // Phase 1 + Phase 2 融合并行：每个 entry 先 bitmask 预过滤，存活则评分。
     let mut scored: Vec<Match> = (0..n)
         .into_par_iter()
         .filter_map(|i| {
@@ -210,17 +218,42 @@ fn search_index(reader: &IndexReader, opts: &SearchOptions) -> Vec<Match> {
                 return None;
             }
 
-            // Phase 2：fzf 评分。basename 命中额外加权（更相关）。
             let basename = e.basename();
+
+            // ── 第一/二层：basename 精确 / 连续子串命中（置顶用）──
             let mut best: Option<i32> = None;
             if bn_ok {
-                if let Some((s, _, _)) = fuzzy::score(basename, &query_lower, e.boundaries) {
-                    best = Some(s + BASENAME_BONUS);
+                if basename == query_lower.as_slice() {
+                    // 精确等于：最高层，再叠 fzf 分做同层微调。
+                    let fzf = fuzzy::score(basename, &query_lower, e.boundaries)
+                        .map(|(s, _, _)| s)
+                        .unwrap_or(0);
+                    best = Some(EXACT_TIER + fzf);
+                } else if let Some(pos) = find_sub(basename, &query_lower) {
+                    // 连续子串命中：次高层。前缀 / 词边界起点再加一档。
+                    let mut s = SUBSTR_TIER;
+                    if pos == 0 {
+                        s += PREFIX_BONUS; // basename 以 query 开头
+                    } else if pos < 64 && (e.boundaries & (1u64 << pos)) != 0 {
+                        s += BOUNDARY_BONUS; // 子串起点落在词边界（紧跟分隔符）
+                    }
+                    // basename 越短、query 占比越高 → 越相关（轻微加权）。
+                    s += (query_lower.len() as i32 * 4) - basename.len() as i32;
+                    best = Some(s);
                 }
             }
-            if path_ok {
-                if let Some((s, _, _)) = fuzzy::score(e.path, &query_lower, e.boundaries) {
-                    best = Some(best.map_or(s, |b| b.max(s)));
+
+            // ── 第三层：fzf 子序列兜底（basename 优先，再退全路径）──
+            if best.is_none() {
+                if bn_ok {
+                    if let Some((s, _, _)) = fuzzy::score(basename, &query_lower, e.boundaries) {
+                        best = Some(s + BASENAME_BONUS);
+                    }
+                }
+                if path_ok {
+                    if let Some((s, _, _)) = fuzzy::score(e.path, &query_lower, e.boundaries) {
+                        best = Some(best.map_or(s, |b| b.max(s)));
+                    }
                 }
             }
             let score = best?;
@@ -243,27 +276,80 @@ fn search_index(reader: &IndexReader, opts: &SearchOptions) -> Vec<Match> {
             .cmp(&a.score)
             .then_with(|| a.path.len().cmp(&b.path.len()))
     });
+    // 结果展示上限（0 = 不限）。⚠️ 这是「展示条数」而非「索引条数」——
+    // 索引本身无上限（见 build_index），全盘条目都参与了上面的过滤/评分。
     if opts.limit != 0 && scored.len() > opts.limit {
         scored.truncate(opts.limit);
     }
     scored
 }
 
-/// basename 命中的加权分（让「文件名里出现查询」的结果排在纯路径命中之前）。
+/// 在 `hay` 中找 `needle` 首次出现的字节偏移（朴素子串匹配，两者均已小写）。
+#[inline]
+fn find_sub(hay: &[u8], needle: &[u8]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > hay.len() {
+        return None;
+    }
+    hay.windows(needle.len()).position(|w| w == needle)
+}
+
+/// 分层评分常量：三层之间用大间隔隔开，保证「精确/子串」永远压过散点 fzf。
+/// basename fzf 满分大致在几百量级（每字符 16 + 边界/连续奖励），故层间距取
+/// 一个远大于此的量级，杜绝任何跨层反超。
+const EXACT_TIER: i32 = 2_000_000; // basename 精确等于 query
+const SUBSTR_TIER: i32 = 1_000_000; // basename 含 query 连续子串
+const PREFIX_BONUS: i32 = 5_000; // 子串命中且 basename 以 query 开头
+const BOUNDARY_BONUS: i32 = 2_500; // 子串起点落在词边界
+
+/// basename fzf 子序列命中的加权分（让「文件名里出现查询」的第三层结果
+/// 排在纯路径命中之前）。仅在没有更高层命中时生效。
 const BASENAME_BONUS: i32 = 24;
 
-/// 建索引：遍历给定根目录（默认 `$HOME`），写入索引文件。
+/// 建索引：遍历给定根目录，写入索引文件。**建索引避开所有网络/云盘**。
 ///
 /// 建索引不走 searchfs（那是查询兜底），而是用可移植的 `walkdir` 全量遍历，
 /// 这样 CLI 冒烟测试在任何目录都能跑通。返回统计。
+///
+/// 网络盘防线（见 `crate::mounts` 与 SEARCH_TEST_BASELINE.md）：
+///   1. 用 `filter_entry` 在**进入子目录前**就 prune 掉不该走的路径 —— 避免
+///      对 rclone→B2 挂载做深度遍历（烧配额 / 挂死）。
+///   2. **不跨设备**：记录每个根的 `st_dev`，遇到不同设备号（挂载边界）就跳过；
+///      子挂载（如 `/Volumes/Disk/h2-*`）天然被切掉。
+///   3. **fstype 白名单 + 显式黑名单**：`mounts::is_local_indexable` 双保险。
+///
+/// 无索引条数上限：覆盖全盘、不漏 `~/temp_test`（对齐测试基线 §2）。
 pub fn build_index(roots: &[PathBuf], index_path: &Path, follow_links: bool) -> std::io::Result<IndexStats> {
     let mut writer = IndexWriter::new();
     for root in roots {
-        for entry in walkdir::WalkDir::new(root)
+        // 根本身若是网络/云盘，整根跳过。
+        if !crate::mounts::is_local_indexable(root) {
+            continue;
+        }
+        // 记录根所在设备号，用于「不跨设备」判定（挂载边界即停）。
+        let root_dev = crate::mounts::dev_of(root);
+
+        let walker = walkdir::WalkDir::new(root)
             .follow_links(follow_links)
             .into_iter()
-            .filter_map(|e| e.ok())
-        {
+            .filter_entry(|entry| {
+                let p = entry.path();
+                // 显式黑名单（rclone→B2 / CloudStorage）：进入前就 prune。
+                if crate::mounts::is_explicitly_denied(p) {
+                    return false;
+                }
+                // 不跨设备：目录一旦落到与根不同的设备（子挂载），整段 prune。
+                // 只对目录做 dev 检查（文件与其父同设备，省一次 stat）。
+                if entry.file_type().is_dir() {
+                    if let (Some(rd), Some(ed)) = (root_dev, crate::mounts::dev_of(p)) {
+                        if ed != rd {
+                            return false;
+                        }
+                    }
+                }
+                true
+            });
+
+        for entry in walker.filter_map(|e| e.ok()) {
             if let Some(path) = entry.path().to_str() {
                 let is_dir = entry.file_type().is_dir();
                 writer.add(path, is_dir);
@@ -273,12 +359,21 @@ pub fn build_index(roots: &[PathBuf], index_path: &Path, follow_links: bool) -> 
     writer.finish(index_path)
 }
 
-/// 默认建索引根目录：用户主目录（磁盘紧张/无权限时也能安全遍历）。
+/// 默认建索引根目录：用户主目录（覆盖 `~/temp_test`），仅当其在本地卷时纳入。
+///
+/// 只返回**本地可索引**的根（`mounts::is_local_indexable` 过滤），从源头
+/// 避免把网络盘当根。磁盘紧张/无权限时遍历也不会失败（unreadable 目录被跳过）。
 pub fn default_roots() -> Vec<PathBuf> {
-    match dirs::home_dir() {
-        Some(h) => vec![h],
-        None => vec![PathBuf::from(".")],
+    let mut roots = Vec::new();
+    if let Some(h) = dirs::home_dir() {
+        if crate::mounts::is_local_indexable(&h) {
+            roots.push(h);
+        }
     }
+    if roots.is_empty() {
+        roots.push(PathBuf::from("."));
+    }
+    roots
 }
 
 #[cfg(test)]
@@ -313,6 +408,52 @@ mod tests {
             ..Default::default()
         });
         assert!(res2.matches.is_empty());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn exact_and_substring_basename_rank_above_fzf_noise() {
+        // 复刻测试基线场景：真目录 basename == "temp_test" 必须压过
+        // 分散子序列噪音（如 "vscode_pytest"、"testing_tools"）。
+        let dir = std::env::temp_dir().join(format!("haifind-c-rank-{}", std::process::id()));
+        let real = dir.join("temp_test");
+        std::fs::create_dir_all(&real).unwrap();
+        // fzf 子序列噪音：均含 t-e-m-p-_-t-e-s-t 的散点，但非连续子串。
+        std::fs::create_dir_all(dir.join("vscode_pytest")).unwrap();
+        std::fs::create_dir_all(dir.join("testing_tools_example_pt")).unwrap();
+        std::fs::write(dir.join("temp_test_notes.txt"), b"x").unwrap(); // 前缀子串命中
+
+        let idx = dir.join("index.idx");
+        build_index(&[dir.clone()], &idx, false).unwrap();
+        let engine = HybridEngine::with_index_path(idx);
+
+        let res = engine.search(&SearchOptions {
+            query: "temp_test".into(),
+            limit: 50,
+            ..Default::default()
+        });
+        assert_eq!(res.backend, Backend::Index);
+        // 第 1 名必须是 basename 精确等于 temp_test 的真目录。
+        let top = &res.matches[0];
+        assert!(
+            top.path.ends_with("/temp_test"),
+            "expected /temp_test on top, got {}",
+            top.path
+        );
+        // 精确命中的分应严格高于任何仅 fzf 子序列命中的噪音项。
+        let noise = res
+            .matches
+            .iter()
+            .find(|m| m.path.contains("vscode_pytest"));
+        if let Some(n) = noise {
+            assert!(
+                top.score > n.score,
+                "exact temp_test ({}) must beat fzf noise ({})",
+                top.score,
+                n.score
+            );
+        }
 
         std::fs::remove_dir_all(&dir).ok();
     }

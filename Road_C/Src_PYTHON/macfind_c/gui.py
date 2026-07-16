@@ -87,7 +87,12 @@ class SearchWorker(QThread):
 
 
 class IndexWorker(QThread):
-    """Builds the binary index in the background over $HOME."""
+    """Builds the binary index in the background over the local volumes.
+
+    Roots come from :func:`volumes.local_scan_roots` so the build covers the
+    disk broadly (no arbitrary entry cap that could drop ``~/temp_test``) while
+    provably staying off every network/FUSE/cloud mount.
+    """
 
     finished_index = pyqtSignal(str)  # message
 
@@ -97,12 +102,15 @@ class IndexWorker(QThread):
 
     def run(self) -> None:
         from . import index as index_mod
+        from . import volumes
 
         try:
+            roots = volumes.local_scan_roots()
             written = index_mod.build(
-                [str(Path.home())],
+                roots,
                 out_path=self._index_path,
-                max_entries=300_000,
+                max_entries=None,  # no cap — cover the whole local filesystem
+                skip_network=True,
             )
             view = index_mod.load(written)
             self.finished_index.emit(
@@ -175,9 +183,14 @@ class MainWindow(QMainWindow):
         self._debounce.timeout.connect(self._run_search_now)
 
         self.search_field.setFocus()
-        # Populate with an initial (empty-query) listing when an index exists.
+        # Populate with an initial (empty-query) listing when an index exists;
+        # otherwise kick off a first-run build automatically so the user never
+        # lands on the slow searchfs() path by default (§5). The build runs on a
+        # background thread, so the window stays responsive meanwhile.
         if self.engine.has_index:
             self._run_search_now()
+        else:
+            QTimer.singleShot(0, self._build_index)
 
     # -- events ------------------------------------------------------------- #
     def _on_text_changed(self, _text: str) -> None:
@@ -290,7 +303,10 @@ class MainWindow(QMainWindow):
         if self._index_worker is not None and self._index_worker.isRunning():
             return
         self.btn_index.setEnabled(False)
-        self._set_status("Building index over $HOME… (this may take a minute)")
+        self._set_status(
+            "Building index over local volumes (skipping network drives)… "
+            "this may take a minute; search stays available"
+        )
         self._index_worker = IndexWorker(self.engine.index_path)
         self._index_worker.finished_index.connect(self._on_index_done)
         self._index_worker.start()

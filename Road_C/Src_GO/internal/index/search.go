@@ -17,6 +17,34 @@ import (
 // caller should fall back to searchfs().
 var ErrBadIndex = errors.New("index: missing or corrupt")
 
+// Ranking bonuses layered on top of the raw fzf score. They are large relative
+// to fzf's per-character weights (~16 each) so that the *kind* of match — exact
+// name, prefix, or contiguous substring — dominates ordering, and a real
+// basename hit always outranks a scattered subsequence of the same query.
+const (
+	bonusBasename  = 32   // any basename match beats a deep-path-only match
+	bonusExact     = 1000 // basename == query (e.g. "temp_test" folder)
+	bonusPrefix    = 400  // basename starts with the query
+	bonusSubstring = 200  // query is a contiguous substring of the basename
+)
+
+// affinityBonus rewards how tightly `q` sits inside `text`. Exact equality wins
+// outright, then prefix, then any contiguous substring; a merely scattered
+// subsequence gets nothing extra (its fzf score already reflects that). This is
+// what pins an exact folder name like "temp_test" to the top of the list.
+func affinityBonus(q, text string) int {
+	switch {
+	case text == q:
+		return bonusExact
+	case strings.HasPrefix(text, q):
+		return bonusPrefix
+	case strings.Contains(text, q):
+		return bonusSubstring
+	default:
+		return 0
+	}
+}
+
 // Match is one search hit surfaced to the UI/CLI.
 type Match struct {
 	Path  string
@@ -137,11 +165,21 @@ func (ix *Index) Search(query string, limit int) []Match {
 				if bitmask.Matches(bnMask, qMask) {
 					res, ok = fuzzy.Match(q, bnPath)
 					if ok {
-						res.Score += 20 // basename hits rank above deep-path hits
+						// Basename hits rank above deep-path hits, and within
+						// them exact/prefix/substring matches decisively beat
+						// scattered fuzzy subsequences — so searching "temp_test"
+						// puts the real .../temp_test directory on top instead of
+						// noise like "vscode_pytest".
+						res.Score += bonusBasename + affinityBonus(q, bnPath)
 					}
 				}
 				if !ok {
 					res, ok = fuzzy.Match(q, path)
+					if ok {
+						// A contiguous substring anywhere in the path still beats
+						// a purely scattered subsequence match.
+						res.Score += affinityBonus(q, path) / 2
+					}
 				}
 				if ok {
 					local = append(local, Match{Path: path, IsDir: isDir, Score: res.Score})

@@ -29,18 +29,39 @@ constexpr uint64_t kIndexMagic = 0x3158495F5843464DULL; // "MFCX_IX1" (LE)
 // Default location of the on-disk index.
 std::string defaultIndexPath();
 
+// Default roots to index when the caller doesn't specify any: the user's home
+// plus /Applications (mirrors the Road_C Tauri reference). Network/FUSE mounts
+// under these are pruned during the walk (see VolumeFilter).
+std::vector<std::string> defaultIndexRoots();
+
 // Compute the 64-bit character bitmask of a lowercased string (a-z, 0-9, . - _).
 uint64_t charMask(const std::string& lowered);
 
 // fzf-style fuzzy score of `pattern` (already lowercased) against `text`
-// (already lowercased). Returns a score; higher is better. Returns INT_MIN-ish
-// sentinel (< 0 and out via `matched`) when the pattern isn't a subsequence.
+// (already lowercased). Returns a score; higher is better. `matched` is false
+// when the pattern isn't even a subsequence.
 struct FuzzyScore {
     bool matched = false;
     int  score   = 0;
 };
 FuzzyScore fuzzyScore(const std::string& pattern, const std::string& text,
                       std::size_t boundaryHintStart);
+
+// Rank a query against one indexed path, combining coarse match *tiers* (exact
+// basename > prefix > substring > scattered subsequence) with the fine-grained
+// fzf score inside each tier. This is what puts `/Users/oracle/temp_test` at
+// the top for the query `temp_test` instead of letting scattered fzf noise like
+// `vscode_pytest` compete. `matched` is false when the pattern isn't even a
+// subsequence of the path (i.e. not a real hit).
+//   `lowPath`     — the lowercased full path.
+//   `lowPattern`  — the lowercased query.
+//   `bnStart`     — offset of the basename within `lowPath`.
+struct RankScore {
+    bool matched = false;
+    long score   = 0;   // large dynamic range → tier * base + fzf refinement
+};
+RankScore rankPath(const std::string& lowPattern, const std::string& lowPath,
+                   std::size_t bnStart);
 
 class IndexEngine {
 public:

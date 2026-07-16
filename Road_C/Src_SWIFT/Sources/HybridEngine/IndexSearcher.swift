@@ -61,6 +61,12 @@ public final class IndexSearcher {
     /// extension name → ID, recovered from the extension blob.
     private let extLookup: [String: UInt16]
 
+    /// Flat bonus added to every basename match so a real filename hit always
+    /// outranks an incidental match found deeper in a parent directory. Larger
+    /// than any single fzf/tier delta so the ordering is: basename-exact >
+    /// basename-anything > whole-path.
+    static let basenameBoost = 1_000_000
+
     /// mmap + validate the index file. Throws `IndexError.missing/corrupt` when
     /// the file is absent or unusable so the hybrid layer can fall back.
     public init(path: String) throws {
@@ -244,27 +250,59 @@ public final class IndexSearcher {
         let loOff = Int(loOffsets[i])
         let loLen = Int(loLengths[i])
         let bnStart = Int(bnStarts[i])
-        let textStart = matchWholePath ? 0 : bnStart
-        let textPtr = loBlob + loOff + textStart
-        let textLen = loLen - textStart
+        if bnStart > loLen { return nil }   // defensive: corrupt/stale entry
 
         let hitScore: Int
         if matchWholePath {
-            guard let r = FuzzyScore.score(pattern: pat,
-                                           text: UnsafeBufferPointer(start: textPtr, count: textLen),
-                                           boundaries: 0, boundariesOffset: 0) else { return nil }
+            // Query contains '/': match against the whole path. Word boundaries
+            // over a full path are dominated by the '/' separators, so pass the
+            // whole-path bounds (offset 0) rather than the basename-only bitmap.
+            let textPtr = loBlob + loOff
+            guard let r = FuzzyScore.scoreRanked(
+                pattern: pat,
+                text: UnsafeBufferPointer(start: textPtr, count: loLen),
+                boundaries: wholePathBoundaries(base: textPtr, len: loLen),
+                boundariesOffset: 0) else { return nil }
             hitScore = r.score
         } else {
-            guard let r = FuzzyScore.score(pattern: pat,
-                                           text: UnsafeBufferPointer(start: textPtr, count: textLen),
-                                           boundaries: bnBounds[i], boundariesOffset: 0) else { return nil }
-            hitScore = r.score
+            // Basename-only: a query without '/' matches the *filename*, never a
+            // parent directory. Phase-1a already prefiltered on the basename mask
+            // (`bnMasks[i]`), so parent-path incidental hits are excluded here by
+            // construction — that's what kills the fzf noise item ① called out.
+            // The large basename boost keeps these above any '/'-query path hits.
+            let bnPtr = loBlob + loOff + bnStart
+            let bnLen = loLen - bnStart
+            guard let r = FuzzyScore.scoreRanked(
+                pattern: pat,
+                text: UnsafeBufferPointer(start: bnPtr, count: bnLen),
+                boundaries: bnBounds[i], boundariesOffset: 0) else { return nil }
+            hitScore = r.score + IndexSearcher.basenameBoost
         }
 
         // Display the original-case path.
         let path = String(decoding: UnsafeBufferPointer(start: origBlob + Int(origOffsets[i]),
                                                         count: Int(origLengths[i])), as: UTF8.self)
         return SearchHit(path: path, isDir: isDir, score: hitScore)
+    }
+
+    /// Word-boundary bitmap over the first 64 bytes of a whole path: bit i is set
+    /// when byte i starts a word (index 0, or right after a `/ . - _ space`, or a
+    /// digit-run start). Mirrors `computeBoundaries` but works over a raw pointer.
+    @inline(__always)
+    private func wholePathBoundaries(base: UnsafePointer<UInt8>, len: Int) -> UInt64 {
+        var mask: UInt64 = 0
+        var prev: UInt8 = 0x2F   // pretend a leading separator so index 0 counts
+        let n = min(len, 64)
+        var i = 0
+        while i < n {
+            let b = base[i]
+            let sep = (prev == 0x2F || prev == 0x2E || prev == 0x2D || prev == 0x5F || prev == 0x20)
+            let digitStart = (b >= 0x30 && b <= 0x39) && !(prev >= 0x30 && prev <= 0x39)
+            if sep || digitStart { mask |= (1 << UInt64(i)) }
+            prev = b
+            i += 1
+        }
+        return mask
     }
 
     /// Extract an extension constraint if the query is a bare ".ext" or "*.ext".

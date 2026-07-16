@@ -24,6 +24,16 @@ type entry struct {
 // Build walks each root, collecting file/dir paths, and writes a binary index
 // to outPath. It returns the number of entries indexed. Unreadable directories
 // are skipped rather than aborting the whole walk.
+//
+// Network / FUSE / remote volumes are pruned before any stat or readdir touches
+// them (see walkfilter.go): indexing them is slow, can hang, and — on this
+// machine's rclone→B2 mounts — costs money. The prune is driven by the live
+// mount table plus a static exclusion list, so it holds even if a root happens
+// to point at (or cross into) a remote volume.
+//
+// There is no entry-count cap: coverage is bounded only by the roots, so the
+// whole local filesystem can be indexed without silently dropping files
+// (SEARCH_TEST_BASELINE.md #2).
 func Build(roots []string, outPath string) (int, error) {
 	var entries []entry
 	var blob []byte
@@ -43,7 +53,13 @@ func Build(roots []string, outPath string) (int, error) {
 		})
 	}
 
+	skip := newSkipper()
 	for _, root := range roots {
+		// Guard the root itself: never descend into a root that is (or lives
+		// under) a network mount.
+		if skip.shouldSkip(root) {
+			continue
+		}
 		_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				// Skip unreadable entries (permission denied, races) and keep going.
@@ -51,6 +67,10 @@ func Build(roots []string, outPath string) (int, error) {
 					return fs.SkipDir
 				}
 				return nil
+			}
+			// Prune network / excluded directories before touching their contents.
+			if d.IsDir() && skip.shouldSkip(path) {
+				return fs.SkipDir
 			}
 			add(path, d.IsDir())
 			return nil
@@ -100,14 +120,46 @@ func serialize(entries []entry, blob []byte, outPath string) error {
 	return os.Rename(tmp, outPath)
 }
 
-// DefaultRoots returns a sensible default scan set: the user's home directory
-// plus /Applications. Falls back to "/" if HOME is unset.
+// DefaultRoots returns the default scan set: the user's home directory,
+// /Applications, and every *local* volume mounted under /Volumes. Adding the
+// local /Volumes entries widens coverage to secondary disks (e.g. the baseline's
+// /Volumes/MacDisk/Users/Shared/temp_test) while network mounts there are pruned
+// by the walk's skipper — so we never index a remote volume. Falls back to "/"
+// if HOME is unset.
 func DefaultRoots() []string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return []string{"/"}
 	}
-	return []string{home, "/Applications"}
+	roots := []string{home, "/Applications"}
+	roots = append(roots, localVolumeRoots(home)...)
+	return roots
+}
+
+// localVolumeRoots lists local volumes mounted under /Volumes worth indexing,
+// excluding network mounts and the home volume (already covered by `home`).
+// It reads the live mount table; if that is unavailable it returns nothing
+// (home + /Applications still gets indexed).
+func localVolumeRoots(home string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, m := range listMounts() {
+		if !strings.HasPrefix(m.point, "/Volumes/") {
+			continue
+		}
+		if !m.isLocal || !localFSTypes[strings.ToLower(m.fstype)] {
+			continue // network / FUSE volume — skip
+		}
+		// The home directory's volume is already a root; don't double-index it.
+		if strings.HasPrefix(home, m.point+"/") || home == m.point {
+			continue
+		}
+		if !seen[m.point] {
+			seen[m.point] = true
+			out = append(out, m.point)
+		}
+	}
+	return out
 }
 
 // DefaultPath is where the index is cached, mirroring Cling's location scheme.

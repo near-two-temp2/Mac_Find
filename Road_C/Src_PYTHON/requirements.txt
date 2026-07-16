@@ -1,5 +1,15 @@
 # Runtime + packaging dependencies for MacFind Road_C (Python).
-# Authoritative build is GitHub Actions (macos-latest). See build-c-python.yml.
-PyQt6>=6.6
-numpy>=1.24
+# Authoritative build is GitHub Actions (macos-15-intel). See build-c-python.yml.
+#
+# ⚠️ macOS 12 (Intel) compatibility — DO NOT bump blindly:
+#   The user machine is macOS 12.7.6 on Intel. PyQt6-Qt6 >= 6.8 needs macOS 13+
+#   at runtime (the app silently fails to open on 12). Qt 6.6.x is the last
+#   line that both (a) ships a real x86_64 wheel tagged macosx_10_14 and
+#   (b) still supports macOS 11/12 at runtime. So we pin the whole 6.6 line.
+#   PyQt6-Qt6 (the bundled Qt binaries) is the one that gates the OS floor;
+#   PyQt6 (the bindings) is pinned to match its ABI.
+PyQt6==6.6.1
+PyQt6-Qt6==6.6.*
+PyQt6-sip>=13.6,<14
+numpy>=1.24,<2.1
 pyinstaller>=6.0

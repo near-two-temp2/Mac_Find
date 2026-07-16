@@ -94,9 +94,13 @@ async function main(): Promise<void> {
 
   if (cmd === 'index') {
     const roots = positionals.length > 0 ? positionals : defaultRoots();
+    // No entry cap by default (cover the whole local disk — baseline requires
+    // not dropping ~/temp_test); --max stays an opt-in for CI smoke runs.
     const max =
-      typeof flags.max === 'string' ? parseInt(flags.max, 10) : 50000;
-    process.stdout.write(`Indexing roots: ${roots.join(', ')} (max ${max})\n`);
+      typeof flags.max === 'string' ? parseInt(flags.max, 10) : undefined;
+    process.stdout.write(
+      `Indexing roots: ${roots.join(', ')} (max ${max ?? 'unlimited'})\n`
+    );
     const t0 = Date.now();
     const count = await engine.rebuildIndex(roots, max);
     process.stdout.write(

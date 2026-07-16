@@ -163,6 +163,18 @@ public:
                 this, [this] { debounce_->start(); });
 
         connect(rebuildBtn_, &QPushButton::clicked, this, &MainWindow::startRebuild);
+
+        // First-launch auto-index: if no index exists yet, build one right away
+        // instead of silently dropping every query onto the slow searchfs()
+        // path (~86s full-disk). Deferred so the window paints first. If an
+        // index is already loaded, we stay quiet and ready.
+        if (!engine().indexAvailable()) {
+            QTimer::singleShot(0, this, [this] {
+                statusBar()->showMessage(
+                    "No index yet — building one now for fast fuzzy search…");
+                startRebuild();
+            });
+        }
     }
 
     ~MainWindow() override { stopSearchWorker(); }
@@ -274,7 +286,7 @@ private:
                     .arg(engine().indexEntryCount()));
         } else {
             statusBar()->showMessage(
-                "Ready. No index yet — searches use searchfs(); click Rebuild Index for fuzzy search.");
+                "Ready. No index yet — building automatically; searchfs() serves searches meanwhile.");
         }
     }
 

@@ -194,8 +194,36 @@ static Napi::Value Search(const Napi::CallbackInfo &info) {
     return arr;
 }
 
+// JS signature: mountType(path: string) -> { fstype: string, local: boolean } | null
+//
+// Wraps statfs(2) so the index builder can keep to *local* volumes and skip
+// network / FUSE mounts (rclone→B2, SMB, NFS, FileProvider). Returns the
+// filesystem type name (e.g. "apfs", "hfs", "macfuse", "smbfs") and whether the
+// MNT_LOCAL flag is set. null on error (path missing / statfs failed).
+static Napi::Value MountType(const Napi::CallbackInfo &info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "mountType(path) requires a string path").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    std::string p = info[0].As<Napi::String>().Utf8Value();
+
+    struct statfs sfs;
+    if (statfs(p.c_str(), &sfs) != 0) {
+        return env.Null();
+    }
+
+    Napi::Object o = Napi::Object::New(env);
+    o.Set("fstype", Napi::String::New(env, sfs.f_fstypename));
+    o.Set("local", Napi::Boolean::New(env, (sfs.f_flags & MNT_LOCAL) != 0));
+    return o;
+}
+
 static Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("search", Napi::Function::New(env, Search));
+    exports.Set("mountType", Napi::Function::New(env, MountType));
     return exports;
 }
 

@@ -26,6 +26,11 @@ interface MacFindSearchResult {
   note?: string;
 }
 
+interface MacFindIndexingEvent {
+  phase: 'start' | 'done' | 'error';
+  payload?: { count?: number; message?: string };
+}
+
 interface MacFindApi {
   status(): Promise<MacFindEngineStatus>;
   search(
@@ -35,6 +40,7 @@ interface MacFindApi {
   reindex(roots?: string[], max?: number): Promise<number>;
   reveal(filePath: string): Promise<boolean>;
   open(filePath: string): Promise<boolean | string>;
+  onIndexing(cb: (e: MacFindIndexingEvent) => void): () => void;
 }
 
 interface Window {
