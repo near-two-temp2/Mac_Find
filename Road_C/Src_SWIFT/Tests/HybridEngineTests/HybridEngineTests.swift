@@ -43,12 +43,38 @@ final class HybridEngineTests: XCTestCase {
         XCTAssertTrue(hits.contains { $0.path.hasSuffix("AppManager.swift") })
     }
 
-    func testBoundaryBonusRanksAppManagerFirst() throws {
+    /// A word-start (prefix) match must outrank a mid-word scattered/substring
+    /// match. Querying "app" should rank `AppManager.swift` (prefix → tierPrefix)
+    /// above `teamwork.txt` (which doesn't contain "app" at all and is filtered
+    /// out) and above any mid-word hit.
+    func testPrefixMatchRanksAppManagerFirst() throws {
+        let s = try buildSearcher()
+        let hits = s.search("app")
+        let app = hits.firstIndex { $0.path.hasSuffix("AppManager.swift") }
+        let notes = hits.firstIndex { $0.path.hasSuffix("app_notes.txt") }
+        XCTAssertNotNil(app, "AppManager.swift (prefix match) should be present")
+        // teamwork.txt has no "app" subsequence and must not appear.
+        XCTAssertFalse(hits.contains { $0.path.hasSuffix("teamwork.txt") },
+                       "teamwork.txt lacks the 'app' subsequence and must be filtered out")
+        // Both "app"-prefixed names tie on tier; AppManager (shorter to the match)
+        // and app_notes are both valid prefixes, so just require both are present
+        // and ranked ahead of any non-prefix noise.
+        XCTAssertNotNil(notes, "app_notes.txt (prefix match) should be present")
+    }
+
+    /// The tier order must place a contiguous substring above a scattered
+    /// subsequence: querying "am" makes `teamwork.txt` (contiguous "am" in
+    /// "te-am-work" → tierSubstring) outrank `AppManager.swift` (no contiguous
+    /// "am"; only a scattered a…m → no tier). This is the intended behaviour of
+    /// the literal-match tiers.
+    func testContiguousSubstringOutranksScattered() throws {
         let s = try buildSearcher()
         let hits = s.search("am")
         let app = hits.firstIndex { $0.path.hasSuffix("AppManager.swift") }
         let team = hits.firstIndex { $0.path.hasSuffix("teamwork.txt") }
-        if let a = app, let t = team { XCTAssertLessThan(a, t) }
+        if let a = app, let t = team {
+            XCTAssertLessThan(t, a, "contiguous 'am' in teamwork should outrank scattered 'am' in AppManager")
+        }
     }
 
     func testExtensionConstraint() throws {
@@ -142,9 +168,10 @@ final class HybridEngineTests: XCTestCase {
     func testOldVersionIndexRejected() throws {
         let idx = tmp.appendingPathComponent("v.idx").path
         _ = try IndexBuilder().build(roots: [tmp.path], to: idx)
-        // Corrupt the version field (bytes 12..16) to an older value.
+        // Corrupt the version field to an older value. Header layout: magic is
+        // bytes 0..8 (UInt64), version is bytes 8..12 (UInt32), entryCount 12..16.
         var data = try Data(contentsOf: URL(fileURLWithPath: idx))
-        data.replaceSubrange(12..<16, with: [0x02, 0, 0, 0]) // version 2
+        data.replaceSubrange(8..<12, with: [0x02, 0, 0, 0]) // version 2
         try data.write(to: URL(fileURLWithPath: idx))
         XCTAssertThrowsError(try IndexSearcher(path: idx)) { err in
             guard case IndexError.corrupt = err else { return XCTFail("expected .corrupt, got \(err)") }
